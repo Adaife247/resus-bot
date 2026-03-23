@@ -257,7 +257,16 @@ async def cmd_listposts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "*Recent posts (last 20):*\n\n" + "\n".join(lines),
         parse_mode="Markdown",
     )
+async def cmd_testprompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
+    # Restrict to admins only (important)
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ Admins only.")
+        return
+
+    await send_daily_prompt(context.bot)
+    await update.message.reply_text("✅ Test daily prompt sent.")
 
 # ══════════════════════════════════════════════
 #  CALLBACK HANDLER — Reply button
@@ -578,6 +587,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help",      cmd_help))
     app.add_handler(CommandHandler("delete",    cmd_delete))
     app.add_handler(CommandHandler("listposts", cmd_listposts))
+    app.add_handler(CommandHandler("testprompt", cmd_testprompt))
 
     # ── Register message handler (private chats only) ──
     app.add_handler(MessageHandler(
