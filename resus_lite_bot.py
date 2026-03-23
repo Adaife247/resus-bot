@@ -526,11 +526,25 @@ async def send_daily_prompt(bot: Bot) -> None:
     )
 
     try:
-        await bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=message,
-            parse_mode="Markdown",
-        )
+prompt_id = f"PROMPT-{prompt_index:04d}"
+
+# Store prompt like a normal post
+posts[prompt_id] = {
+    "channel_msg_id": None,
+    "text": prompt,
+    "reactions": {"❤️": set(), "🫂": set()},
+}
+
+keyboard = build_reaction_keyboard(prompt_id)
+
+sent = await bot.send_message(
+    chat_id=CHANNEL_ID,
+    text=message,
+    parse_mode="Markdown",
+    reply_markup=keyboard,
+)
+
+posts[prompt_id]["channel_msg_id"] = sent.message_id
         logger.info(f"[PROMPT] Daily prompt sent: {prompt[:40]}…")
     except Exception as e:
         logger.error(f"[PROMPT] Failed to send daily prompt: {e}")
