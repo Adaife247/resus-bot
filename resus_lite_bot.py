@@ -535,7 +535,7 @@ async def send_daily_prompt(bot: Bot) -> None:
     )
 
     try:
-prompt_id = f"PROMPT-{prompt_index:04d}"
+        prompt_id = f"PROMPT-{prompt_index:04d}"
 
 # Store prompt like a normal post
 posts[prompt_id] = {
