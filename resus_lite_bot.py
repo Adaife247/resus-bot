@@ -283,12 +283,35 @@ async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Main message handler.
-    - Detects reply format: "Reply to RL-XXXX: message"
+    - Detects if the user is replying to a post via private chat.
     - Otherwise treats as a new anonymous post.
     - Flags messages containing banned words.
     """
     user_id  = update.effective_user.id
     raw_text = update.message.text.strip()
+
+    # ── Safety check ──────────────────────────────
+    flagged_word = contains_banned_word(raw_text)
+    if flagged_word:
+        logger.warning(
+            f"[FLAGGED] User {user_id} | Trigger: '{flagged_word}' | Message: {raw_text!r}"
+        )
+        await update.message.reply_text(CRISIS_RESPONSE)
+        return
+
+    # ── Check if user is replying via private chat
+    if "reply_to" in context.user_data:
+        post_id = context.user_data.pop("reply_to")
+        await handle_reply_from_button(update, context, post_id)
+        return
+
+    # ── Reply detection (old style) ──────────────
+    if raw_text.lower().startswith("reply to "):
+        await handle_reply(update, context, raw_text)
+        return
+
+    # ── New anonymous post ────────────────────────
+    await handle_new_post(update, context, raw_text)
 
     # ── Safety check ──────────────────────────────
     flagged_word = contains_banned_word(raw_text)
