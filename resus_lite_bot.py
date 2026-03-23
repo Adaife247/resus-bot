@@ -255,8 +255,9 @@ async def cmd_listposts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # Check if user is replying via button
 if "reply_to" in context.user_data:
     post_id = context.user_data.pop("reply_to")
-    await handle_reply_from_button(update, context, post_id)
-    return
+    async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Main message handler.
