@@ -520,34 +520,38 @@ async def handle_reply_from_button(update, context, post_id):
 # ══════════════════════════════════════════════
 
 async def send_daily_prompt(bot: Bot) -> None:
+    """
+    Send a rotating daily prompt to the channel.
+    Scheduled to run every day at DAILY_PROMPT_HOUR:DAILY_PROMPT_MINUTE UTC.
+    """
     global prompt_index
-
     prompt = DAILY_PROMPTS[prompt_index % len(DAILY_PROMPTS)]
     prompt_index += 1
 
-    prompt_id = f"PROMPT-{prompt_index:04d}"
+    prompt_id = generate_post_id()
 
-    message = (
-        f"💬 *Daily Check-In*\n\n"
-        f"{prompt}\n\n"
-        f"_Tap below to share anonymously 👇_"
-    )
-
-    # Store like a normal post
+    # Store as a “pseudo post” so reactions work if you want
     posts[prompt_id] = {
         "channel_msg_id": None,
         "text": prompt,
         "reactions": {"❤️": set(), "🫂": set()},
     }
 
-keyboard = InlineKeyboardMarkup([
-    [
-        InlineKeyboardButton(
-            "💬 Share anonymously",
-            url=f"https://t.me/ResusLite_Bot?start={prompt_id}"
-        )
-    ]
-])
+    message = (
+        f"💬 *Daily Check-In*\n\n"
+        f"{prompt}\n\n"
+        f"_Tap the button below to reply anonymously to this check-in._"
+    )
+
+    # Button to open private chat with bot
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "💬 Share anonymously",
+                url=f"https://t.me/ResusLite_Bot?start={prompt_id}"
+            )
+        ]
+    ])
 
     try:
         sent = await bot.send_message(
@@ -556,10 +560,9 @@ keyboard = InlineKeyboardMarkup([
             parse_mode="Markdown",
             reply_markup=keyboard,
         )
-
+        # Save the channel message ID
         posts[prompt_id]["channel_msg_id"] = sent.message_id
         logger.info(f"[PROMPT] Daily prompt sent: {prompt[:40]}…")
-
     except Exception as e:
         logger.error(f"[PROMPT] Failed to send daily prompt: {e}")
 
