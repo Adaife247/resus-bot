@@ -535,7 +535,14 @@ posts[prompt_id] = {
     "reactions": {"❤️": set(), "🫂": set()},
 }
 
-keyboard = build_reaction_keyboard(prompt_id)
+keyboard = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton(
+            "💬 Share anonymously",
+            callback_data=f"reply|{prompt_id}"
+        )
+    ]
+])
 
 sent = await bot.send_message(
     chat_id=CHANNEL_ID,
