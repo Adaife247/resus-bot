@@ -309,8 +309,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if raw_text.lower().startswith("reply to "):
         await handle_reply(update, context, raw_text)
         return
-# ── New anonymous post
-await handle_new_post(update, context, raw_text)
+
+    # ── New anonymous post
+    await handle_new_post(update, context, raw_text)
 
 async def handle_new_post(
     update: Update,
