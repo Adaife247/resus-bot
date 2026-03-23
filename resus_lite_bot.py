@@ -174,18 +174,25 @@ def format_reply(original_text: str, reply_text: str) -> str:
 #  COMMAND HANDLERS
 # ══════════════════════════════════════════════
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a welcome message when the user starts the bot."""
-    await update.message.reply_text(
-        "💙 *Welcome to Resus Lite*\n\n"
-        "This is a safe, anonymous space for our community.\n\n"
-        "*How to use:*\n"
-        "• Just send me any message → I'll post it anonymously in the channel.\n"
-        "• To reply to a post, send:\n"
-        "  `Reply to RL-0001: your message here`\n\n"
-        "Everything is anonymous. You are seen. 🫂",
-        parse_mode="Markdown",
-    )
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles /start command. If user clicks reply button, start_args contains the post_id.
+    """
+    start_args = context.args  # Telegram passes ?start=<post_id> as args
+    if start_args:
+        post_id = start_args[0]
+        context.user_data["reply_to"] = post_id
+        await update.message.reply_text(
+            f"💬 You're replying to {post_id}.\n"
+            "Send your message now 👇"
+        )
+    else:
+        # Regular welcome message
+        await update.message.reply_text(
+            "💙 Welcome to Resus Lite!\n\n"
+            "Send me a message here and I'll post it anonymously in the channel.\n\n"
+            "💬 To reply to a post, click the 'Reply' button under that post — it will open this chat automatically."
+        )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
