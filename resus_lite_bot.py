@@ -548,8 +548,6 @@ keyboard = InlineKeyboardMarkup([
         )
     ]
 ])
-        ]
-    ])
 
     try:
         sent = await bot.send_message(
