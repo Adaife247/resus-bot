@@ -137,6 +137,12 @@ def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
                 f"🫂 Support ({hug_count})",
                 callback_data=f"react|{post_id}|🫂"
             ),
+        ],
+        [
+            InlineKeyboardButton(
+                "💬 Reply",
+                callback_data=f"reply|{post_id}"
+            )
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -246,7 +252,11 @@ async def cmd_listposts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ══════════════════════════════════════════════
 #  MESSAGE HANDLER — Core anonymous posting logic
 # ══════════════════════════════════════════════
-
+# Check if user is replying via button
+if "reply_to" in context.user_data:
+    post_id = context.user_data.pop("reply_to")
+    await handle_reply_from_button(update, context, post_id)
+    return
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Main message handler.
@@ -411,7 +421,50 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         logger.warning(f"[REACTION] Could not update keyboard for {post_id}: {e}")
 
+# ══════════════════════════════════════════════
+#  REPLY BUTTON HANDLER
+# ══════════════════════════════════════════════
 
+async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        _, post_id = query.data.split("|")
+    except:
+        return
+
+    # Save post ID for this user
+    context.user_data["reply_to"] = post_id
+
+    await query.message.reply_text(
+        f"💬 You're replying to {post_id}\n\nSend your message now 👇"
+    )
+
+
+async def handle_reply_from_button(update, context, post_id):
+    reply_text = update.message.text.strip()
+
+    if post_id not in posts:
+        await update.message.reply_text("❌ Original post not found.")
+        return
+
+    original_text   = posts[post_id]["text"]
+    original_msg_id = posts[post_id]["channel_msg_id"]
+
+    formatted_reply = format_reply(original_text, reply_text)
+
+    try:
+        await context.bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=formatted_reply,
+            parse_mode="Markdown",
+            reply_to_message_id=original_msg_id,
+        )
+        await update.message.reply_text("✅ Your reply has been posted 🫂")
+    except Exception as e:
+        print(e)
+        await update.message.reply_text("⚠️ Failed to send reply.")
 # ══════════════════════════════════════════════
 #  DAILY PROMPTS (Scheduled)
 # ══════════════════════════════════════════════
@@ -472,7 +525,7 @@ def main() -> None:
 
     # ── Register reaction button handler ──────
     app.add_handler(CallbackQueryHandler(handle_reaction, pattern=r"^react\|"))
-
+    app.add_handler(CallbackQueryHandler(handle_reply_button, pattern=r"^reply\|"))
     # ── Schedule daily prompts ─────────────────
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
