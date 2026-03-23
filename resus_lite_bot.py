@@ -602,7 +602,7 @@ def main() -> None:
 
     # ── Register reaction button handler ──────
     app.add_handler(CallbackQueryHandler(handle_reaction, pattern=r"^react\|"))
-    app.add_handler(CallbackQueryHandler(handle_reply_button, pattern=r"^reply\|"))
+
     # ── Schedule daily prompts ─────────────────
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
