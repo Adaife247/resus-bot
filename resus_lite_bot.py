@@ -424,7 +424,38 @@ async def handle_reply(
     except Exception as e:
         logger.error(f"[ERROR] Failed to post reply to {post_id}: {e}")
         await update.message.reply_text("⚠️ Something went wrong. Please try again.")
+async def handle_reply_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE, post_id: str):
+    """
+    Handles replies coming from the 'Reply' button private chat.
+    """
+    reply_text = update.message.text.strip()
+    if not reply_text:
+        await update.message.reply_text("⚠️ Your reply message was empty.")
+        return
 
+    if post_id not in posts:
+        await update.message.reply_text(
+            f"❌ Post `{post_id}` doesn't exist or has been removed.",
+            parse_mode="Markdown",
+        )
+        return
+
+    original_text   = posts[post_id]["text"]
+    original_msg_id = posts[post_id]["channel_msg_id"]
+    formatted_reply = format_reply(original_text, reply_text)
+
+    try:
+        await context.bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=formatted_reply,
+            parse_mode="Markdown",
+            reply_to_message_id=original_msg_id
+        )
+        await update.message.reply_text("✅ Your anonymous reply has been posted. 🫂")
+        logger.info(f"[REPLY] Reply to {post_id} posted via private chat.")
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to post reply to {post_id}: {e}")
+        await update.message.reply_text("⚠️ Something went wrong. Please try again.")
 
 # ══════════════════════════════════════════════
 #  REACTION HANDLER
