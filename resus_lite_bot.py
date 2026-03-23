@@ -520,48 +520,46 @@ async def handle_reply_from_button(update, context, post_id):
 # ══════════════════════════════════════════════
 
 async def send_daily_prompt(bot: Bot) -> None:
-    """
-    Send a rotating daily prompt to the channel.
-    Scheduled to run every day at DAILY_PROMPT_HOUR:DAILY_PROMPT_MINUTE UTC.
-    """
     global prompt_index
+
     prompt = DAILY_PROMPTS[prompt_index % len(DAILY_PROMPTS)]
     prompt_index += 1
+
+    prompt_id = f"PROMPT-{prompt_index:04d}"
 
     message = (
         f"💬 *Daily Check-In*\n\n"
         f"{prompt}\n\n"
-        f"_Reply to the bot privately and your response will be posted here anonymously._"
+        f"_Tap below to share anonymously 👇_"
     )
 
+    # Store like a normal post
+    posts[prompt_id] = {
+        "channel_msg_id": None,
+        "text": prompt,
+        "reactions": {"❤️": set(), "🫂": set()},
+    }
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "💬 Share anonymously",
+                callback_data=f"reply|{prompt_id}"
+            )
+        ]
+    ])
+
     try:
-        prompt_id = f"PROMPT-{prompt_index:04d}"
-
-# Store prompt like a normal post
-posts[prompt_id] = {
-    "channel_msg_id": None,
-    "text": prompt,
-    "reactions": {"❤️": set(), "🫂": set()},
-}
-
-keyboard = InlineKeyboardMarkup([
-    [
-        InlineKeyboardButton(
-            "💬 Share anonymously",
-            callback_data=f"reply|{prompt_id}"
+        sent = await bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=message,
+            parse_mode="Markdown",
+            reply_markup=keyboard,
         )
-    ]
-])
 
-sent = await bot.send_message(
-    chat_id=CHANNEL_ID,
-    text=message,
-    parse_mode="Markdown",
-    reply_markup=keyboard,
-)
-
-posts[prompt_id]["channel_msg_id"] = sent.message_id
+        posts[prompt_id]["channel_msg_id"] = sent.message_id
         logger.info(f"[PROMPT] Daily prompt sent: {prompt[:40]}…")
+
     except Exception as e:
         logger.error(f"[PROMPT] Failed to send daily prompt: {e}")
 
