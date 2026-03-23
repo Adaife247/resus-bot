@@ -123,6 +123,9 @@ def contains_banned_word(text: str) -> Optional[str]:
 
 
 def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
+    """
+    Builds reaction buttons and a 'Reply' button that opens a private chat with the bot.
+    """
     data = posts.get(post_id, {})
     heart_count = len(data.get("reactions", {}).get("❤️", set()))
     hug_count   = len(data.get("reactions", {}).get("🫂", set()))
@@ -141,7 +144,7 @@ def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 "💬 Reply",
-                callback_data=f"reply|{post_id}"
+                url=f"https://t.me/YourBotUsername?start={post_id}"
             )
         ]
     ]
