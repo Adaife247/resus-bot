@@ -123,7 +123,6 @@ def contains_banned_word(text: str) -> Optional[str]:
 
 
 def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
-    """Build the inline reaction button row for a post."""
     data = posts.get(post_id, {})
     heart_count = len(data.get("reactions", {}).get("❤️", set()))
     hug_count   = len(data.get("reactions", {}).get("🫂", set()))
@@ -131,17 +130,16 @@ def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(
-                f"❤️  {heart_count}",
+                f"❤️ Relate ({heart_count})",
                 callback_data=f"react|{post_id}|❤️"
             ),
             InlineKeyboardButton(
-                f"🫂  {hug_count}",
+                f"🫂 Support ({hug_count})",
                 callback_data=f"react|{post_id}|🫂"
             ),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
-
 
 def format_post(post_id: str, text: str) -> str:
     return (
