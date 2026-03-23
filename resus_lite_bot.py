@@ -258,6 +258,18 @@ if "reply_to" in context.user_data:
     async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    try:
+        _, post_id = query.data.split("|")
+    except:
+        return
+
+    # Save the post ID temporarily for this user
+    context.user_data["reply_to"] = post_id
+
+    await query.message.reply_text(
+        f"💬 You're replying to {post_id}\n\nSend your message now 👇"
+    )
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Main message handler.
