@@ -309,29 +309,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if raw_text.lower().startswith("reply to "):
         await handle_reply(update, context, raw_text)
         return
-
-    # ── New anonymous post ────────────────────────
-    await handle_new_post(update, context, raw_text)
-
-    # ── Safety check ──────────────────────────────
-    flagged_word = contains_banned_word(raw_text)
-    if flagged_word:
-        logger.warning(
-            f"[FLAGGED] User {user_id} | Trigger: '{flagged_word}' | Message: {raw_text!r}"
-        )
-        # Send a supportive safety response; do NOT post to channel
-        await update.message.reply_text(CRISIS_RESPONSE)
-        return
-
-    # ── Reply detection ───────────────────────────
-    # Format: "Reply to RL-0001: message text"
-    if raw_text.lower().startswith("reply to "):
-        await handle_reply(update, context, raw_text)
-        return
-
-    # ── New anonymous post ────────────────────────
-    await handle_new_post(update, context, raw_text)
-
+# ── New anonymous post
+await handle_new_post(update, context, raw_text)
 
 async def handle_new_post(
     update: Update,
@@ -501,22 +480,6 @@ async def handle_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ══════════════════════════════════════════════
 #  REPLY BUTTON HANDLER
 # ══════════════════════════════════════════════
-
-async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    try:
-        _, post_id = query.data.split("|")
-    except:
-        return
-
-    # Save post ID for this user
-    context.user_data["reply_to"] = post_id
-
-    await query.message.reply_text(
-        f"💬 You're replying to {post_id}\n\nSend your message now 👇"
-    )
 
 
 async def handle_reply_from_button(update, context, post_id):
