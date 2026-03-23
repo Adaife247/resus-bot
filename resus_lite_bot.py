@@ -540,12 +540,14 @@ async def send_daily_prompt(bot: Bot) -> None:
         "reactions": {"❤️": set(), "🫂": set()},
     }
 
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "💬 Share anonymously",
-                callback_data=f"reply|{prompt_id}"
-            )
+keyboard = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton(
+            "💬 Share anonymously",
+            url=f"https://t.me/ResusLite_Bot?start={prompt_id}"
+        )
+    ]
+])
         ]
     ])
 
