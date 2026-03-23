@@ -144,7 +144,7 @@ def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(
                 "💬 Reply",
-                url=f"https://t.me/YourBotUsername?start={post_id}"
+                url=f"https://t.me/ResusLite_Bot?start={post_id}"
             )
         ]
     ]
