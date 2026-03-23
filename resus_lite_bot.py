@@ -144,11 +144,10 @@ def build_reaction_keyboard(post_id: str) -> InlineKeyboardMarkup:
 
 
 def format_post(post_id: str, text: str) -> str:
-    """Format a new anonymous post for the channel."""
     return (
         f"🫂 *Someone shared:*\n\n"
         f"“{text}”\n\n"
-        f"_❤️ 0 people relate   🫂 0 support_\n"
+        f"_Tap below to react ❤️ or show support 🫂_\n"
         f"`{post_id}`"
     )
 
