@@ -250,12 +250,9 @@ async def cmd_listposts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ══════════════════════════════════════════════
-#  MESSAGE HANDLER — Core anonymous posting logic
+#  CALLBACK HANDLER — Reply button
 # ══════════════════════════════════════════════
-# Check if user is replying via button
-if "reply_to" in context.user_data:
-    post_id = context.user_data.pop("reply_to")
-    async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_reply_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     try:
@@ -267,6 +264,11 @@ if "reply_to" in context.user_data:
     await query.message.reply_text(
         f"💬 You're replying to {post_id}\n\nSend your message now 👇"
     )
+
+
+# ══════════════════════════════════════════════
+#  MESSAGE HANDLER — Core anonymous posting logic
+# ══════════════════════════════════════════════
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
