@@ -379,35 +379,47 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     except IndexError: pass
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.id not in ADMIN_IDS:
-        return
+    try:
+        user_id = update.effective_chat.id
         
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT COUNT(*) FROM users')
-    total_users = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM posts')
-    total_posts = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM active_sessions')
-    active_sessions = cursor.fetchone()[0] // 2 
-    
-    cursor.execute("SELECT COUNT(*) FROM helpers WHERE status = 'pending'")
-    pending_helpers = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    stats_message = (
-        "📊 *Resus Lite Admin Stats* 📊\n\n"
-        f"👥 Total Users: {total_users}\n"
-        f"📝 Total Posts: {total_posts}\n"
-        f"🫂 Active 1:1 Sessions: {active_sessions}\n"
-        f"🛡️ Pending Helper Apps: {pending_helpers}"
-    )
-    await update.message.reply_text(stats_message, parse_mode='Markdown')
-
+        # This converts everything to strings so we don't get blocked by a formatting typo
+        admin_ids_str = [str(aid) for aid in ADMIN_IDS]
+        if str(user_id) not in admin_ids_str:
+            await update.message.reply_text(f"🔒 Access Denied. Your ID is {user_id}")
+            return
+            
+        await update.message.reply_text("⏳ Fetching stats...")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM posts')
+        total_posts = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM active_sessions')
+        active_sessions = cursor.fetchone()[0] // 2 
+        
+        cursor.execute("SELECT COUNT(*) FROM helpers WHERE status = 'pending'")
+        pending_helpers = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        stats_message = (
+            "📊 Resus Lite Admin Stats 📊\n\n"
+            f"👥 Total Users: {total_users}\n"
+            f"📝 Total Posts: {total_posts}\n"
+            f"🫂 Active 1:1 Sessions: {active_sessions}\n"
+            f"🛡️ Pending Helper Apps: {pending_helpers}"
+        )
+        
+        # Removed parse_mode completely to ensure Telegram doesn't reject it
+        await update.message.reply_text(stats_message)
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ CRASH DETECTED: {e}")
 # --- Main Application ---
 def main():
     init_db()
