@@ -105,7 +105,7 @@ def get_main_menu():
         [KeyboardButton("📝 New Post"), KeyboardButton("🛑 End Session")],
         [KeyboardButton("🛡️ Apply as Helper"), KeyboardButton("ℹ️ My Handle")]
     ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, persistent=True)
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # --- Standard User Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
