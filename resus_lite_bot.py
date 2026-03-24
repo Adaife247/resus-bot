@@ -1,5 +1,7 @@
 import logging
 import sqlite3
+import os
+import re
 from datetime import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -8,8 +10,8 @@ from telegram.ext import (
 )
 
 # --- Configuration ---
-BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64"
-ADMIN_IDS = [6102322573] 
+BOT_TOKEN = os.getenv("8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64") # Replace if not using Env Variables
+ADMIN_IDS = [6102322573] # <--- REPLACE WITH YOUR ACTUAL TELEGRAM ID
 FEED_CHAT_ID = "-1003645637131" 
 
 BANNED_WORDS = ['suicide', 'kill myself', 'end it all']
@@ -23,20 +25,11 @@ CRISIS_MESSAGE = (
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- In-Memory UI State ---
-# Tracks what the user is currently doing: 'posting', 'replying_123', etc.
-# We keep this in memory because if the bot restarts, losing a mid-typing state isn't a big deal.
 user_ui_states = {} 
 
-# --- Database Setup & Persistence ---
-import os
-import sqlite3
-
+# --- Database Setup & Persistence (RAILWAY READY) ---
 def get_db_connection():
-    # Make sure the permanent folder exists
     os.makedirs('/app/data', exist_ok=True)
-    
-    # Save the database INSIDE the permanent volume
     conn = sqlite3.connect('/app/data/resus_lite.db')
     conn.row_factory = sqlite3.Row
     return conn
@@ -106,29 +99,23 @@ def get_main_menu():
         [KeyboardButton("📝 New Post"), KeyboardButton("🛑 End Session")],
         [KeyboardButton("🛡️ Apply as Helper"), KeyboardButton("ℹ️ My Handle")]
     ]
+    # 'persistent=True' removed so it doesn't crash older libraries
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # --- Standard User Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    if is_banned(chat_id):
+        return
+        
+    handle = get_or_create_user(chat_id)
+    user_ui_states.pop(chat_id, None) 
     
-    try:
-        # We tell the bot to send a message BEFORE it touches the database
-        await update.message.reply_text("⏳ Attempting to connect to the database...")
-        
-        if is_banned(chat_id):
-            return
-            
-        handle = get_or_create_user(chat_id)
-        user_ui_states.pop(chat_id, None)
-        
-        await update.message.reply_text(
-            f"✅ Success! Welcome to Resus Lite. Your handle is {handle}.",
-            reply_markup=get_main_menu()
-        )
-    except Exception as e:
-        # If it crashes, it will print the exact Python error directly to you in Telegram!
-        await update.message.reply_text(f"❌ CRASH DETECTED: {e}")
+    await update.message.reply_text(
+        "Welcome to Resus Lite! 🌿\n\n"
+        "This is a safe, anonymous space. Use the menu below to navigate.",
+        reply_markup=get_main_menu()
+    )
 
 # --- Callback & Interactive Menus ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,10 +147,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("reply_"):
         await query.answer()
         post_id = int(data.split("_")[1])
-        
-        # Set the user's state to replying for this specific post
         user_ui_states[user_id] = f"replying_{post_id}"
-        
         await context.bot.send_message(
             chat_id=user_id, 
             text="✍️ Type your reply below. It will be sent anonymously to the author.\n*(Or type 'cancel' to abort)*"
@@ -224,7 +208,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Check Menu Buttons
     if text == "📝 New Post":
         user_ui_states[chat_id] = "posting"
         await update.message.reply_text("✍️ What's on your mind? Type your message below to broadcast it anonymously.\n*(Or type 'cancel' to abort)*")
@@ -270,14 +253,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
 
-    # 2. Check for Cancel
     if text.lower() == 'cancel':
         user_ui_states.pop(chat_id, None)
         await update.message.reply_text("Action cancelled.", reply_markup=get_main_menu())
         conn.close()
         return
 
-    # 3. Check Active 1:1 Sessions (Highest priority for free text)
     cursor.execute('SELECT peer_id FROM active_sessions WHERE chat_id = ?', (chat_id,))
     session = cursor.fetchone()
     if session:
@@ -289,7 +270,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=peer_id, text=f"💬: {text}")
         return
         
-    # 4. Handle State-Driven Actions (Posting / Replying)
     current_state = user_ui_states.get(chat_id)
     
     if current_state == "posting":
@@ -335,12 +315,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_ui_states.pop(chat_id, None)
         
     else:
-        # User typed a random message while not in any state or session
         await update.message.reply_text("Please use the menu below to interact.", reply_markup=get_main_menu())
 
     conn.close()
 
-# --- Admin Commands (Kept the same as Phase 2) ---
+# --- Admin Commands ---
 async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS: return
     try:
@@ -378,48 +357,42 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"{target_handle} banned.")
         conn.close()
     except IndexError: pass
+
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_chat.id
-        
-        # This converts everything to strings so we don't get blocked by a formatting typo
         admin_ids_str = [str(aid) for aid in ADMIN_IDS]
+        
         if str(user_id) not in admin_ids_str:
             await update.message.reply_text(f"🔒 Access Denied. Your ID is {user_id}")
             return
             
-        await update.message.reply_text("⏳ Fetching stats...")
-        
         conn = get_db_connection()
         cursor = conn.cursor()
         
         cursor.execute('SELECT COUNT(*) FROM users')
         total_users = cursor.fetchone()[0]
-        
         cursor.execute('SELECT COUNT(*) FROM posts')
         total_posts = cursor.fetchone()[0]
-        
         cursor.execute('SELECT COUNT(*) FROM active_sessions')
         active_sessions = cursor.fetchone()[0] // 2 
-        
         cursor.execute("SELECT COUNT(*) FROM helpers WHERE status = 'pending'")
         pending_helpers = cursor.fetchone()[0]
         
         conn.close()
         
         stats_message = (
-            "📊 Resus Lite Admin Stats 📊\n\n"
+            "📊 *Resus Lite Admin Stats* 📊\n\n"
             f"👥 Total Users: {total_users}\n"
             f"📝 Total Posts: {total_posts}\n"
             f"🫂 Active 1:1 Sessions: {active_sessions}\n"
             f"🛡️ Pending Helper Apps: {pending_helpers}"
         )
-        
-        # Removed parse_mode completely to ensure Telegram doesn't reject it
-        await update.message.reply_text(stats_message)
+        await update.message.reply_text(stats_message, parse_mode='Markdown')
         
     except Exception as e:
         await update.message.reply_text(f"❌ CRASH DETECTED: {e}")
+
 # --- Main Application ---
 def main():
     init_db()
@@ -429,11 +402,13 @@ def main():
     app.add_handler(CommandHandler("approve", approve_helper))
     app.add_handler(CommandHandler("ban", ban_user))
     
+    # 🚨 THE MISSING HANDLER IS NOW SECURELY IN PLACE 🚨
+    app.add_handler(CommandHandler("stats", admin_stats))
+    
     app.add_handler(CallbackQueryHandler(button_handler))
-    # All text inputs now funnel through our central routing logic
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
 
-    logger.info("Resus Lite Bot (Phase 3 - UI/UX) is live!")
+    logger.info("Resus Lite Bot is live with persistent storage and admin dashboard!")
     app.run_polling()
 
 if __name__ == '__main__':
