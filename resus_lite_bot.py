@@ -759,7 +759,7 @@ def main() -> None:
         raise ValueError("❌ Please set CHANNEL_ID in the script before running.")
 
     # Build the Application
-    app = Applicationbuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     # ── Register command handlers ──────────────
     app.add_handler(CommandHandler("start",     cmd_start))
