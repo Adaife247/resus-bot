@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 # --- Configuration ---
-BOT_TOKEN = os.getenv("8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64") # Replace if not using Env Variables
+BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64" # Replace if not using Env Variables
 ADMIN_IDS = [6102322573] # <--- REPLACE WITH YOUR ACTUAL TELEGRAM ID
 FEED_CHAT_ID = "-1003645637131" 
 
