@@ -58,7 +58,34 @@ def get_or_create_user(chat_id: int) -> str:
     else:
         cursor.execute('SELECT COUNT(*) FROM users')
         count = cursor.fetchone()[0] + 1
-        handle = f"RL-{count:04d}"
+        
+        # 50 Calming & Empowering Adjectives
+        adjectives = [
+            "Calm", "Brave", "Quiet", "Gentle", "Kind", "Warm", "Bright", "Serene", 
+            "Steady", "Hopeful", "Peaceful", "Safe", "Mindful", "Grounded", "Patient", 
+            "Resilient", "Radiant", "Clear", "Stellar", "Noble", "True", "Pure", 
+            "Vivid", "Luminous", "Strong", "Loyal", "Wise", "Earnest", "Tranquil",
+            "Mellow", "Lucid", "Sound", "Still", "Adept", "Vigilant", "Humble",
+            "Fierce", "Tender", "Sincere", "Aura", "Zen", "Bold", "Candid", 
+            "Valid", "Subtle", "Keen", "Prime", "Solid", "Brisk", "Fluid"
+        ]
+        
+        # 50 Grounding Nature & Abstract Nouns
+        nouns = [
+            "River", "Cedar", "Dawn", "Breeze", "Forest", "Brook", "Ocean", "Maple", 
+            "Willow", "Star", "Moon", "Sky", "Horizon", "Echo", "Harbor", "Valley", 
+            "Peak", "Grove", "Beacon", "Tide", "Oasis", "Aurora", "Nova", "Ray", 
+            "Coast", "Ridge", "Summit", "Dune", "Cove", "Glacier", "Haven", "Comet",
+            "Orbit", "Pebble", "Stone", "Leaf", "Petal", "Root", "Sprout", "Bloom",
+            "Rain", "Mist", "Cloud", "Storm", "Drift", "Current", "Spark", "Flame",
+            "Ember", "Ash"
+        ]
+        
+        adj = random.choice(adjectives)
+        noun = random.choice(nouns)
+        
+        handle = f"{adj}-{noun}-{count:02d}"
+        
         cursor.execute('INSERT INTO users (chat_id, handle) VALUES (?, ?)', (chat_id, handle))
         conn.commit()
     conn.close()
