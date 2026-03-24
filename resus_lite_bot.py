@@ -378,7 +378,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"{target_handle} banned.")
         conn.close()
     except IndexError: pass
-        async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS:
         return
         
