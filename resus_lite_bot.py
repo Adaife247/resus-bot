@@ -110,17 +110,24 @@ def get_main_menu():
 # --- Standard User Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if is_banned(chat_id):
-        return
-        
-    handle = get_or_create_user(chat_id)
-    user_ui_states.pop(chat_id, None) # Clear any stuck states
     
-    await update.message.reply_text(
-        "Welcome to Resus Lite! 🌿\n\n"
-        "This is a safe, anonymous space. Use the menu below to navigate.",
-        reply_markup=get_main_menu()
-    )
+    try:
+        # We tell the bot to send a message BEFORE it touches the database
+        await update.message.reply_text("⏳ Attempting to connect to the database...")
+        
+        if is_banned(chat_id):
+            return
+            
+        handle = get_or_create_user(chat_id)
+        user_ui_states.pop(chat_id, None)
+        
+        await update.message.reply_text(
+            f"✅ Success! Welcome to Resus Lite. Your handle is {handle}.",
+            reply_markup=get_main_menu()
+        )
+    except Exception as e:
+        # If it crashes, it will print the exact Python error directly to you in Telegram!
+        await update.message.reply_text(f"❌ CRASH DETECTED: {e}")
 
 # --- Callback & Interactive Menus ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
