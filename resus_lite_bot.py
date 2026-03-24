@@ -17,6 +17,24 @@ import logging
 import uuid
 import json
 import os
+import sqlite3
+import random
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import sqlite3
+
+# Connect to SQLite database (creates file if it doesn't exist)
+conn = sqlite3.connect('resus.db')
+cursor = conn.cursor()
+import random
+# Random handle generator lists
+ADJECTIVES = ["Calm", "Quiet", "Gentle", "Soft", "Bright", "Happy", "Silent", "Wise"]
+NOUNS = ["River", "Moon", "Star", "Leaf", "Cloud", "Wave", "Stone", "Light"]
+def assign_handle():
+    """
+    Returns a random handle like CalmRiver_7
+    """
+    return f"{random.choice(ADJECTIVES)}{random.choice(NOUNS)}_{random.randint(1,50)}"
 from datetime import time
 from typing import Optional
 
@@ -35,7 +53,42 @@ from telegram.ext import (
     filters,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+# Users table (stores anonymous handles)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    telegram_id INTEGER PRIMARY KEY,
+    anon_handle TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
 
+# Posts table (feed posts)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS posts (
+    post_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    mood TEXT,
+    category TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+# Sessions table (1:1 private chats)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    op_id INTEGER NOT NULL,
+    helper_id INTEGER NOT NULL,
+    active INTEGER DEFAULT 1,
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP
+)
+""")
+
+# Save table creation
+conn.commit()
 # ─────────────────────────────────────────────
 #  🔧  CONFIGURATION  ← Edit these values
 # ─────────────────────────────────────────────
@@ -168,12 +221,132 @@ def format_reply(original_text: str, reply_text: str) -> str:
         f"┊ _Replying to:_ \"{preview}\"\n\n"
         f"{reply_text}"
     )
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    cursor.execute("SELECT anon_handle FROM users WHERE telegram_id = ?", (user_id,))
+    row = cursor.fetchone()
+    if row is None:
+        handle = assign_handle()
+        cursor.execute("INSERT INTO users (telegram_id, anon_handle) VALUES (?, ?)", (user_id, handle))
+        conn.commit()
+        await update.message.reply_text(f"Welcome! Your anonymous handle is {handle}")
+    else:
+        handle = row[0]
+        await update.message.reply_text(f"Welcome back! Your handle is {handle}")
+        async def post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    handle = get_handle(user_id)
+    
+    # Grab message content (everything after /post)
+    content = " ".join(context.args)
+    if not content:
+        await update.message.reply_text("Please provide the text of your post after /post")
+        return
 
+    # Insert post into DB
+    cursor.execute(
+        "INSERT INTO posts (op_id, content) VALUES (?, ?)",
+        (user_id, content)
+    )
+    conn.commit()
+    
+    post_id = cursor.lastrowid
+    
+    # Send to feed (you can replace chat_id with your channel or group)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("I relate", callback_data=f"relate_{post_id}"),
+         InlineKeyboardButton("I want to help", callback_data=f"help_{post_id}")]
+    ])
+    
+    await update.message.reply_text(f"🧠 Post #{post_id} by {handle}\n\"{content}\"", reply_markup=keyboard)
+    helper_queue = []  # global queue of available helpers
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data
+    
+    if data.startswith("help_"):
+        post_id = int(data.split("_")[1])
+        # Add helper to queue if not already
+        if user_id not in helper_queue:
+            helper_queue.append(user_id)
+        # Try to match OP with first available helper
+        cursor.execute("SELECT op_id FROM posts WHERE post_id = ?", (post_id,))
+        row = cursor.fetchone()
+        if not row:
+            await query.message.reply_text("Post not found.")
+            return
+        op_id = row[0]
+        if helper_queue:
+            helper_id = helper_queue.pop(0)
+            cursor.execute(
+                "INSERT INTO sessions (post_id, op_id, helper_id) VALUES (?, ?, ?)",
+                (post_id, op_id, helper_id)
+            )
+            conn.commit()
+            # Notify both users
+            op_handle = get_handle(op_id)
+            helper_handle = get_handle(helper_id)
+            await context.bot.send_message(op_id, f"💬 You are matched with a helper: {helper_handle}")
+            await context.bot.send_message(helper_id, f"💬 You are matched with OP: {op_handle}")
+            async def relay_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # Find active session
+    cursor.execute(
+        "SELECT op_id, helper_id FROM sessions WHERE active=1 AND (op_id=? OR helper_id=?)",
+        (user_id, user_id)
+    )
+    row = cursor.fetchone()
+    if not row:
+        await update.message.reply_text("You are not in an active session.")
+        return
+    
+    op_id, helper_id = row
+    recipient_id = helper_id if user_id == op_id else op_id
+    sender_handle = get_handle(user_id)
+    await context.bot.send_message(recipient_id, f"💬 {sender_handle}: {text}")
+    async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    cursor.execute(
+        "SELECT session_id, op_id, helper_id FROM sessions WHERE active=1 AND (op_id=? OR helper_id=?)",
+        (user_id, user_id)
+    )
+    row = cursor.fetchone()
+    if not row:
+        await update.message.reply_text("You are not in an active session.")
+        return
+    
+    session_id, op_id, helper_id = row
+    cursor.execute("UPDATE sessions SET active=0, ended_at=CURRENT_TIMESTAMP WHERE session_id=?", (session_id,))
+    conn.commit()
+    
+    await update.message.reply_text("Session ended.")
+    # Notify other participant
+    recipient_id = helper_id if user_id == op_id else op_id
+    await context.bot.send_message(recipient_id, "Session ended by your partner.")
+        
 
 # ══════════════════════════════════════════════
 #  COMMAND HANDLERS
 # ══════════════════════════════════════════════
-
+# Check if user already exists
+if user_id not in user_handles:  # Or your DB check
+    # Assign a new random handle
+    handle = assign_handle()
+    user_handles[user_id] = handle  # If using DB, insert into users table here
+    await update.message.reply_text(
+        f"Welcome to Resus! Your anonymous handle is {handle}"
+    )
+else:
+    # Existing user: retrieve handle
+    handle = user_handles[user_id]
+    await update.message.reply_text(
+        f"Welcome back! Your anonymous handle is {handle}"
+    )
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles /start command. If user clicks reply button, start_args contains the post_id.
@@ -613,6 +786,11 @@ def main() -> None:
         f"[SCHEDULER] Daily prompts scheduled at "
         f"{DAILY_PROMPT_HOUR:02d}:{DAILY_PROMPT_MINUTE:02d} UTC"
     )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("post", post))
+    app.add_handler(CommandHandler("end", end_session))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, relay_message))
 
     # ── Start polling ──────────────────────────
     logger.info("🚀 Resus Lite Bot is running…")
