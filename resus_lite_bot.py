@@ -233,7 +233,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         handle = row[0]
         await update.message.reply_text(f"Welcome back! Your handle is {handle}")
-        async def post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     handle = get_handle(user_id)
     
@@ -259,7 +259,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     
     await update.message.reply_text(f"🧠 Post #{post_id} by {handle}\n\"{content}\"", reply_markup=keyboard)
-    helper_queue = []  # global queue of available helpers
+helper_queue = []  # global queue of available helpers
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -291,7 +291,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             helper_handle = get_handle(helper_id)
             await context.bot.send_message(op_id, f"💬 You are matched with a helper: {helper_handle}")
             await context.bot.send_message(helper_id, f"💬 You are matched with OP: {op_handle}")
-            async def relay_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def relay_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
     
@@ -309,7 +309,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recipient_id = helper_id if user_id == op_id else op_id
     sender_handle = get_handle(user_id)
     await context.bot.send_message(recipient_id, f"💬 {sender_handle}: {text}")
-    async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     cursor.execute(
         "SELECT session_id, op_id, helper_id FROM sessions WHERE active=1 AND (op_id=? OR helper_id=?)",
@@ -337,6 +337,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if user_id not in user_handles:  # Or your DB check
     # Assign a new random handle
     handle = assign_handle()
+    def get_handle(user_id: int) -> str:
+    cursor.execute("SELECT anon_handle FROM users WHERE telegram_id = ?", (user_id,))
+    row = cursor.fetchone()
+    return row[0] if row else assign_handle()
     user_handles[user_id] = handle  # If using DB, insert into users table here
     await update.message.reply_text(
         f"Welcome to Resus! Your anonymous handle is {handle}"
@@ -754,7 +758,7 @@ def main() -> None:
         raise ValueError("❌ Please set CHANNEL_ID in the script before running.")
 
     # Build the Application
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Applicationbuilder().token(BOT_TOKEN).build()
 
     # ── Register command handlers ──────────────
     app.add_handler(CommandHandler("start",     cmd_start))
