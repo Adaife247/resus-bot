@@ -29,8 +29,14 @@ logger = logging.getLogger(__name__)
 user_ui_states = {} 
 
 # --- Database Setup & Persistence ---
+import os
+
 def get_db_connection():
-    conn = sqlite3.connect('resus_lite.db')
+    # Ensure the data directory exists
+    os.makedirs('/app/data', exist_ok=True)
+    
+    # Save the database inside the persistent Railway Volume
+    conn = sqlite3.connect('/app/data/resus_lite.db')
     conn.row_factory = sqlite3.Row
     return conn
 
