@@ -338,9 +338,9 @@ if user_id not in user_handles:  # Or your DB check
     # Assign a new random handle
     handle = assign_handle()
     def get_handle(user_id: int) -> str:
-    cursor.execute("SELECT anon_handle FROM users WHERE telegram_id = ?", (user_id,))
-    row = cursor.fetchone()
-    return row[0] if row else assign_handle()
+        cursor.execute("SELECT anon_handle FROM users WHERE telegram_id = ?", (user_id,))
+        row = cursor.fetchone()
+        return row[0] if row else assign_handle()
     user_handles[user_id] = handle  # If using DB, insert into users table here
     await update.message.reply_text(
         f"Welcome to Resus! Your anonymous handle is {handle}"
