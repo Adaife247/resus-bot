@@ -30,12 +30,13 @@ user_ui_states = {}
 
 # --- Database Setup & Persistence ---
 import os
+import sqlite3
 
 def get_db_connection():
-    # Ensure the data directory exists
+    # Make sure the permanent folder exists
     os.makedirs('/app/data', exist_ok=True)
     
-    # Save the database inside the persistent Railway Volume
+    # Save the database INSIDE the permanent volume
     conn = sqlite3.connect('/app/data/resus_lite.db')
     conn.row_factory = sqlite3.Row
     return conn
@@ -377,6 +378,35 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"{target_handle} banned.")
         conn.close()
     except IndexError: pass
+        async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id not in ADMIN_IDS:
+        return
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT COUNT(*) FROM users')
+    total_users = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM posts')
+    total_posts = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM active_sessions')
+    active_sessions = cursor.fetchone()[0] // 2 
+    
+    cursor.execute("SELECT COUNT(*) FROM helpers WHERE status = 'pending'")
+    pending_helpers = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    stats_message = (
+        "📊 *Resus Lite Admin Stats* 📊\n\n"
+        f"👥 Total Users: {total_users}\n"
+        f"📝 Total Posts: {total_posts}\n"
+        f"🫂 Active 1:1 Sessions: {active_sessions}\n"
+        f"🛡️ Pending Helper Apps: {pending_helpers}"
+    )
+    await update.message.reply_text(stats_message, parse_mode='Markdown')
 
 # --- Main Application ---
 def main():
