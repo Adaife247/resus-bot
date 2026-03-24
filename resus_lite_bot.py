@@ -333,24 +333,25 @@ async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════
 #  COMMAND HANDLERS
 # ══════════════════════════════════════════════
-# Check if user already exists
-if user_id not in user_handles:  # Or your DB check
-    # Assign a new random handle
+async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     handle = assign_handle()
     def get_handle(user_id: int) -> str:
         cursor.execute("SELECT anon_handle FROM users WHERE telegram_id = ?", (user_id,))
         row = cursor.fetchone()
         return row[0] if row else assign_handle()
-    user_handles[user_id] = handle  # If using DB, insert into users table here
+    user_handles[user_id] = handle
+    if user_id not in user_handles:
         await update.message.reply_text(
             f"Welcome to Resus! Your anonymous handle is {handle}"
         )
-else:
-    # Existing user: retrieve handle
-    handle = user_handles[user_id]
-    await update.message.reply_text(
-        f"Welcome back! Your anonymous handle is {handle}"
-    )
+    else:
+        # Existing user: retrieve handle
+        handle = user_handles[user_id]
+        await update.message.reply_text(
+            f"Welcome back! Your anonymous handle is {handle}"
+        )
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles /start command. If user clicks reply button, start_args contains the post_id.
