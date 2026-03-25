@@ -3,6 +3,8 @@ import sqlite3
 import os
 import re
 import asyncio
+import random            # <-- Added missing random module
+import time as std_time  # <-- Fixed the time collision
 from datetime import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -11,10 +13,14 @@ from telegram.ext import (
 )
 
 # --- Configuration ---
-BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64" # Replace if not using Env Variables
-ADMIN_IDS = [6102322573] # <--- REPLACE WITH YOUR ACTUAL TELEGRAM ID
+BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64" 
+ADMIN_IDS = [6102322573] 
 FEED_CHAT_ID = "-1003645637131" 
 
+# --- Anti-Spam Configuration ---
+POST_COOLDOWN_SECONDS = 180  # 3 minutes
+MAX_BURST_MESSAGES = 3       # Allow 3 quick messages before locking
+user_post_history = {}       # Tracks a list of recent post times
 CRISIS_MESSAGE = (
     "🛑 *Message Paused*\n\n"
     "I'm keeping this message off the public feed because it sounds like you are carrying an incredibly heavy burden right now, and peer-support isn't enough.\n\n"
@@ -30,6 +36,12 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 user_ui_states = {} 
+
+# --- Helper function for Markdown ---
+def escape_markdown_v2(text: str) -> str:
+    """Escapes special characters for Telegram's MarkdownV2 parser."""
+    escape_chars = r"_*[]()~`>#+-=|{}.!"
+    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
 # --- Database Setup & Persistence (RAILWAY READY) ---
 def get_db_connection():
@@ -63,7 +75,6 @@ def get_or_create_user(chat_id: int) -> str:
         cursor.execute('SELECT COUNT(*) FROM users')
         count = cursor.fetchone()[0] + 1
         
-        # 50 Calming & Empowering Adjectives
         adjectives = [
             "Calm", "Brave", "Quiet", "Gentle", "Kind", "Warm", "Bright", "Serene", 
             "Steady", "Hopeful", "Peaceful", "Safe", "Mindful", "Grounded", "Patient", 
@@ -74,7 +85,6 @@ def get_or_create_user(chat_id: int) -> str:
             "Valid", "Subtle", "Keen", "Prime", "Solid", "Brisk", "Fluid"
         ]
         
-        # 50 Grounding Nature & Abstract Nouns
         nouns = [
             "River", "Cedar", "Dawn", "Breeze", "Forest", "Brook", "Ocean", "Maple", 
             "Willow", "Star", "Moon", "Sky", "Horizon", "Echo", "Harbor", "Valley", 
@@ -104,41 +114,23 @@ def is_banned(chat_id: int) -> bool:
     return banned
 
 def check_moderation(text: str) -> bool:
-    """
-    Advanced Heuristics Engine for Distress Detection
-    Returns True if severe distress is detected, False otherwise.
-    """
     text_lower = text.lower()
-
-    # LEVEL 1: Immediate Crisis & Self-Harm Intent
-    # Catches explicit phrases and common spelling workarounds (e.g., "k!ll", "k1ll")
     crisis_pattern = r"(suicide|k[i!1]ll\s*myself|end\s*it\s*all|want\s*to\s*d[i!1]e|sleep\s*forever|no\s*point\s*in\s*living)"
-
-    # LEVEL 2: Severe Somatic / Biological Distress
-    # Catches physical symptoms of severe nervous system dysregulation and panic
     somatic_pattern = r"(can\'?t\s*breathe|heart\s*is\s*(exploding|racing)|chest\s*is\s*crushing|completely\s*numb|make\s*it\s*stop|losing\s*my\s*mind)"
-
-    # LEVEL 3: Severe Hopelessness & Apathy
-    # Catches dangerous depressive states and extreme cognitive exhaustion
     apathy_pattern = r"(giving\s*up|done\s*trying|nothing\s*matters\s*anymore|too\s*exhausted\s*to\s*(live|try))"
 
-    # Evaluate the text against the patterns
     if re.search(crisis_pattern, text_lower):
         logger.warning(f"CRISIS FLAG TRIGGERED: {text}")
         return True
-
     if re.search(somatic_pattern, text_lower):
         logger.warning(f"SOMATIC PANIC FLAG TRIGGERED: {text}")
         return True
-
     if re.search(apathy_pattern, text_lower):
         logger.warning(f"APATHY FLAG TRIGGERED: {text}")
         return True
-
     return False
 
 async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes.DEFAULT_TYPE):
-    """Silently forwards flagged distress messages to all admins."""
     handle = get_or_create_user(chat_id)
     alert_msg = (
         f"🚨 **CRISIS ALERT INITIATED** 🚨\n\n"
@@ -146,7 +138,6 @@ async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes
         f"**Intercepted Message:**\n_{text}_\n\n"
         f"This message was blocked from the public feed or 1:1 session."
     )
-
     for admin_id in ADMIN_IDS:
         try:
             await context.bot.send_message(chat_id=admin_id, text=alert_msg, parse_mode='Markdown')
@@ -175,7 +166,7 @@ def build_post_keyboard(post_id: int) -> InlineKeyboardMarkup:
 def get_main_menu():
     keyboard = [
         [KeyboardButton("📝 New Post"), KeyboardButton("🛑 End Session")],
-        [KeyboardButton("🧘‍♀️ Quick Relief"), KeyboardButton("🤝 Apply as Helper")], # <-- ADDED QUICK RELIEF HERE
+        [KeyboardButton("🧘‍♀️ Quick Relief"), KeyboardButton("🤝 Apply as Helper")],
         [KeyboardButton("👤 My Handle")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -183,8 +174,7 @@ def get_main_menu():
 # --- Standard User Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if is_banned(chat_id):
-        return
+    if is_banned(chat_id): return
         
     handle = get_or_create_user(chat_id)
     user_ui_states.pop(chat_id, None) 
@@ -193,73 +183,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Welcome to Resus Lite! 🌿\n\n"
         "This is a safe, anonymous space. Use the menu below to navigate.",
         reply_markup=get_main_menu()
-    )
-async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin-only command to force-start an anonymous 1:1 session with a user in distress."""
-    admin_id = update.message.from_user.id
-    
-    # Security check
-    if admin_id not in ADMIN_IDS:
-        return
-
-    # Check format: /reachout Calm-River-02
-    args = context.args
-    if len(args) < 1:
-        await update.message.reply_text("⚠️ **Format:** `/reachout [Handle]`", parse_mode='Markdown')
-        return
-
-    target_handle = args[0]
-
-    # Look up their hidden Telegram ID using their Handle
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
-    row = cursor.fetchone()
-
-    if not row:
-        await update.message.reply_text(f"❌ Could not find a user with the handle {target_handle}.")
-        conn.close()
-        return
-
-    target_chat_id = row['chat_id']
-    
-    # Prevent admin from chatting with themselves
-    if target_chat_id == admin_id:
-        await update.message.reply_text("❌ You cannot start a session with yourself.")
-        conn.close()
-        return
-
-    # Clear any existing sessions either person is currently in to force the emergency connection
-    cursor.execute('DELETE FROM active_sessions WHERE chat_id IN (?, ?) OR peer_id IN (?, ?)', 
-                   (admin_id, target_chat_id, admin_id, target_chat_id))
-
-    # Link them together in a 2-way chat!
-    cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (admin_id, target_chat_id))
-    cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (target_chat_id, admin_id))
-    
-    conn.commit()
-    conn.close()
-
-    # 1. Notify the User (Keeps them anonymous, lets them know it's a safe space)
-    try:
-        await context.bot.send_message(
-            chat_id=target_chat_id,
-            text="🛡️ **Admin Support Outreach** 🛡️\n\n"
-                 "A campus admin has opened a secure, private chat with you to offer support. "
-                 "Your identity remains completely anonymous.\n\n"
-                 "You can reply directly to this message to chat with them. Tap 🛑 End Session when you are safe.",
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        await update.message.reply_text(f"❌ Failed to reach the user. They may have blocked the bot. Error: {e}")
-        return
-
-    # 2. Notify the Admin
-    await update.message.reply_text(
-        f"🟢 **Connection Secured.**\n\n"
-        f"You are now in a live, 1:1 anonymous chat with `{target_handle}`. Anything you type now will go directly to them.\n\n"
-        f"Tap 🛑 End Session when the crisis is resolved.",
-        parse_mode='Markdown'
     )
 
 # --- Callback & Interactive Menus ---
@@ -273,7 +196,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
 
-    # --- 1. HEART REACTIONS ---
     if data.startswith("heart_"):
         await query.answer()
         post_id = int(data.split("_")[1])
@@ -290,7 +212,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         await query.edit_message_reply_markup(reply_markup=build_post_keyboard(post_id))
 
-    # --- 2. REPLYING ---
     elif data.startswith("reply_"):
         await query.answer()
         post_id = int(data.split("_")[1])
@@ -300,7 +221,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="💬 Type your reply below. It will be sent anonymously to the author.\n*(Or type 'cancel' to abort)*"
         )
 
-    # --- 3. 1:1 SUPPORT SESSIONS ---
     elif data.startswith("support_"):
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -346,7 +266,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text="🟢 1:1 Session started! You are now connected to the author. Tap 🛑 End Session when done.")
         await context.bot.send_message(chat_id=op_chat_id, text="🟢 A vetted helper has connected with you regarding your recent post. Tap 🛑 End Session when done.")
 
-    # --- 4. QUICK RELIEF: BOX BREATHING ---
     elif data == "relief_breathe":
         await query.answer()
         msg = await context.bot.send_message(chat_id=user_id, text="🌬️ Get ready. We will do 3 cycles of Box Breathing to lower your heart rate.")
@@ -366,11 +285,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             await msg.edit_text("✅ Breathing cycle complete. You did great.\n\nTap 🧘‍♀️ Quick Relief on your menu if you need to go again.")
         except Exception as e:
-            # If Telegram rejects the edit or hits a timeout, it will print the error directly to you!
             logger.error(f"Breathing visualizer crashed: {e}")
             await context.bot.send_message(chat_id=user_id, text=f"❌ Oops, the visualizer hit a snag: {e}")
 
-    # --- 5. QUICK RELIEF: 5-4-3-2-1 GROUNDING ---
     elif data == "relief_ground_start":
         await query.answer()
         keyboard = [[InlineKeyboardButton("Next Step ➡️", callback_data="ground_5")]]
@@ -458,7 +375,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         conn.close()
         return
-    elif text == "🛡️ Apply as Helper":
+    elif text == "🤝 Apply as Helper":
         cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
         row = cursor.fetchone()
         if row:
@@ -477,7 +394,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
         
-    elif text == "ℹ️ My Handle":
+    elif text == "👤 My Handle":
         handle = get_or_create_user(chat_id)
         await update.message.reply_text(f"Your anonymous handle is: {handle}")
         conn.close()
@@ -496,18 +413,17 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         if check_moderation(text):
             await update.message.reply_text(CRISIS_MESSAGE)
-            await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
+            await notify_admins_of_crisis(chat_id, text, context) 
             return
         await context.bot.send_message(chat_id=peer_id, text=f"💬 Anonymous message: {text}")
         return
 
-  current_state = user_ui_states.get(chat_id)
+    # --- THE MASTER GATEKEEPER ---
+    current_state = user_ui_states.get(chat_id)
 
-    # --- THE MASTER GATEKEEPER: Protects both Posts and Replies ---
     if current_state == "posting" or (current_state and current_state.startswith("replying_")):
         
-        # 1. Smart Anti-Spam Check (Burst Allowance)
-        current_time = time.time()
+        current_time = std_time.time()
         history = user_post_history.get(chat_id, [])
         history = [ts for ts in history if current_time - ts < POST_COOLDOWN_SECONDS]
         
@@ -518,22 +434,18 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # 2. AI Distress Moderation
         if check_moderation(text):
             await update.message.reply_text(CRISIS_MESSAGE, parse_mode='Markdown')
             await notify_admins_of_crisis(chat_id, text, context)
             return
             
-        # 3. Log the allowed message timestamp
         history.append(current_time)
         user_post_history[chat_id] = history
-
-        # --- ROUTE TO THE CORRECT ACTION ---
         
         if current_state == "posting":
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO posts (author_chat_id, text) VALUES (?, ?)', (chat_id, text))
+            cursor.execute('INSERT INTO posts (author_chat_id, content) VALUES (?, ?)', (chat_id, text))
             post_id = cursor.lastrowid
             conn.commit()
             conn.close()
@@ -568,11 +480,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 handle = get_or_create_user(chat_id)
                 safe_text = escape_markdown_v2(text)
                 
-                # Send the reply to the Original Poster
                 await context.bot.send_message(
                     chat_id=op_chat_id,
                     text=f"💬 **New Reply on your post from {handle}:**\n\n_{safe_text}_",
-                    parse_mode='Markdown'
+                    parse_mode='MarkdownV2'
                 )
                 await update.message.reply_text("✅ Your reply was sent securely to the author.")
             else:
@@ -620,9 +531,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_chat.id
-        admin_ids_str = [str(aid) for aid in ADMIN_IDS]
-        
-        if str(user_id) not in admin_ids_str:
+        if user_id not in ADMIN_IDS:
             await update.message.reply_text(f"🔒 Access Denied. Your ID is {user_id}")
             return
             
@@ -652,6 +561,97 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ CRASH DETECTED: {e}")
 
+async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_id = update.message.from_user.id
+    if admin_id not in ADMIN_IDS: return
+
+    args = context.args
+    if len(args) < 1:
+        await update.message.reply_text("⚠️ **Format:** `/reachout [Handle]`", parse_mode='Markdown')
+        return
+
+    target_handle = args[0]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
+    row = cursor.fetchone()
+
+    if not row:
+        await update.message.reply_text(f"❌ Could not find a user with the handle {target_handle}.")
+        conn.close()
+        return
+
+    target_chat_id = row['chat_id']
+    if target_chat_id == admin_id:
+        await update.message.reply_text("❌ You cannot start a session with yourself.")
+        conn.close()
+        return
+
+    cursor.execute('DELETE FROM active_sessions WHERE chat_id IN (?, ?) OR peer_id IN (?, ?)', 
+                   (admin_id, target_chat_id, admin_id, target_chat_id))
+    cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (admin_id, target_chat_id))
+    cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (target_chat_id, admin_id))
+    
+    conn.commit()
+    conn.close()
+
+    try:
+        await context.bot.send_message(
+            chat_id=target_chat_id,
+            text="🛡️ **Admin Support Outreach** 🛡️\n\nA campus admin has opened a secure, private chat with you to offer support. Your identity remains completely anonymous.\n\nYou can reply directly to this message to chat with them. Tap 🛑 End Session when you are safe.",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to reach the user. Error: {e}")
+        return
+
+    await update.message.reply_text(
+        f"🟢 **Connection Secured.**\n\nYou are now in a live, 1:1 anonymous chat with `{target_handle}`. Anything you type now will go directly to them.\n\nTap 🛑 End Session when the crisis is resolved.",
+        parse_mode='Markdown'
+    )
+
+async def duty_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (user_id,))
+    helper = cursor.fetchone()
+    
+    if not helper:
+        await update.message.reply_text("❌ You are not registered as a helper.")
+        conn.close()
+        return
+        
+    current_status = helper['status']
+    
+    if current_status == 'pending':
+        await update.message.reply_text("⏳ Your helper application is still pending admin approval.")
+    elif current_status == 'approved':
+        cursor.execute("UPDATE helpers SET status = 'offline' WHERE chat_id = ?", (user_id,))
+        await update.message.reply_text("🔕 **Status: OFFLINE**\n\nYou are now off duty. Rest up!", parse_mode='Markdown')
+    elif current_status == 'offline':
+        cursor.execute("UPDATE helpers SET status = 'approved' WHERE chat_id = ?", (user_id,))
+        await update.message.reply_text("🔔 **Status: ACTIVE**\n\nYou are now back on duty and can accept 1:1 sessions. Thank you!", parse_mode='Markdown')
+        
+    conn.commit()
+    conn.close()
+
+async def resetme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    
+    if user_id not in ADMIN_IDS:
+        return
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM users WHERE chat_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    
+    await update.message.reply_text("✅ Your old account has been wiped. Tap /start to generate your new Friendly Anonymous handle.")
+
+
 # --- Main Application ---
 def main():
     init_db()
@@ -661,9 +661,11 @@ def main():
     app.add_handler(CommandHandler("approve", approve_helper))
     app.add_handler(CommandHandler("ban", ban_user))
     app.add_handler(CommandHandler("reachout", reachout_command))
-    
-    # 🚨 THE MISSING HANDLER IS NOW SECURELY IN PLACE 🚨
     app.add_handler(CommandHandler("stats", admin_stats))
+    
+    # 🚨 THESE TWO WERE MISSING 🚨
+    app.add_handler(CommandHandler("duty", duty_command))
+    app.add_handler(CommandHandler("resetme", resetme_command))
     
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
