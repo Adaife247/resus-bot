@@ -2,6 +2,7 @@ import logging
 import sqlite3
 import os
 import re
+import asyncio
 from datetime import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
