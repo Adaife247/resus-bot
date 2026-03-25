@@ -501,55 +501,82 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=peer_id, text=f"💬 Anonymous message: {text}")
         return
 
-    current_state = user_ui_states.get(chat_id)
+  current_state = user_ui_states.get(chat_id)
 
-    if current_state == "posting":
+    # --- THE MASTER GATEKEEPER: Protects both Posts and Replies ---
+    if current_state == "posting" or (current_state and current_state.startswith("replying_")):
+        
+        # 1. Smart Anti-Spam Check (Burst Allowance)
+        current_time = time.time()
+        history = user_post_history.get(chat_id, [])
+        history = [ts for ts in history if current_time - ts < POST_COOLDOWN_SECONDS]
+        
+        if len(history) >= MAX_BURST_MESSAGES:
+            await update.message.reply_text(
+                "⏳ **Cooldown Active:** To keep the platform safe from spam, please wait a few minutes before sending more messages.", 
+                parse_mode='Markdown'
+            )
+            return
+
+        # 2. AI Distress Moderation
         if check_moderation(text):
-            await update.message.reply_text(CRISIS_MESSAGE)
-            await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
+            await update.message.reply_text(CRISIS_MESSAGE, parse_mode='Markdown')
+            await notify_admins_of_crisis(chat_id, text, context)
             return
             
-        handle = get_or_create_user(chat_id)
-        cursor.execute('INSERT INTO posts (author_chat_id, content) VALUES (?, ?)', (chat_id, text))
-        post_id = cursor.lastrowid
-        conn.commit()
+        # 3. Log the allowed message timestamp
+        history.append(current_time)
+        user_post_history[chat_id] = history
+
+        # --- ROUTE TO THE CORRECT ACTION ---
         
-        try:
+        if current_state == "posting":
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO posts (author_chat_id, text) VALUES (?, ?)', (chat_id, text))
+            post_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+
+            user_ui_states.pop(chat_id, None)
+
+            handle = get_or_create_user(chat_id)
+            safe_text = escape_markdown_v2(text)
+            feed_message = f"👤 *{handle}*\n\n{safe_text}"
+            
             await context.bot.send_message(
-                chat_id=FEED_CHAT_ID, 
-                text=f"*{handle}* shared:\n\n{text}",
-                parse_mode='Markdown',
+                chat_id=FEED_CHAT_ID,
+                text=feed_message,
+                parse_mode='MarkdownV2',
                 reply_markup=build_post_keyboard(post_id)
             )
-            await update.message.reply_text("Your post has been shared anonymously! 🚀", reply_markup=get_main_menu())
-        except Exception:
-            await update.message.reply_text("Failed to broadcast. Ensure bot has channel access.")
-            
-        user_ui_states.pop(chat_id, None)
-        
-    elif current_state and current_state.startswith("replying_"):
-        post_id = int(current_state.split("_")[1])
-        cursor.execute('SELECT users.handle, posts.author_chat_id FROM posts JOIN users ON posts.author_chat_id = users.chat_id WHERE posts.post_id = ?', (post_id,))
-        post_data = cursor.fetchone()
-        
-        if post_data:
-            sender_handle = get_or_create_user(chat_id)
-            target_chat_id = post_data['author_chat_id']
-            
-            await context.bot.send_message(
-                chat_id=target_chat_id, 
-                text=f"📩 You have a new anonymous reply from {sender_handle}:\n\n{text}"
-            )
-            await update.message.reply_text("Your reply has been delivered safely.", reply_markup=get_main_menu())
-        else:
-            await update.message.reply_text("Sorry, that post no longer exists.")
-            
-        user_ui_states.pop(chat_id, None)
-        
-    else:
-        await update.message.reply_text("Please use the menu below to interact.", reply_markup=get_main_menu())
+            await update.message.reply_text("✅ Your post has been published anonymously to the community.")
 
-    conn.close()
+        elif current_state.startswith("replying_"):
+            post_id = int(current_state.split("_")[1])
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            user_ui_states.pop(chat_id, None)
+
+            if row:
+                op_chat_id = row['author_chat_id']
+                handle = get_or_create_user(chat_id)
+                safe_text = escape_markdown_v2(text)
+                
+                # Send the reply to the Original Poster
+                await context.bot.send_message(
+                    chat_id=op_chat_id,
+                    text=f"💬 **New Reply on your post from {handle}:**\n\n_{safe_text}_",
+                    parse_mode='Markdown'
+                )
+                await update.message.reply_text("✅ Your reply was sent securely to the author.")
+            else:
+                await update.message.reply_text("❌ Could not find the original post.")
 
 # --- Admin Commands ---
 async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
