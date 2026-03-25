@@ -124,9 +124,9 @@ def build_post_keyboard(post_id: int) -> InlineKeyboardMarkup:
 def get_main_menu():
     keyboard = [
         [KeyboardButton("📝 New Post"), KeyboardButton("🛑 End Session")],
-        [KeyboardButton("🛡️ Apply as Helper"), KeyboardButton("ℹ️ My Handle")]
+        [KeyboardButton("🧘‍♀️ Quick Relief"), KeyboardButton("🤝 Apply as Helper")], # <-- ADDED QUICK RELIEF HERE
+        [KeyboardButton("👤 My Handle")]
     ]
-    # 'persistent=True' removed so it doesn't crash older libraries
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # --- Standard User Handlers ---
@@ -254,7 +254,19 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You are not in an active session.")
         conn.close()
         return
-        
+    elif text == "🧘‍♀️ Quick Relief":
+        keyboard = [
+            [InlineKeyboardButton("🌬️ Guided Box Breathing", callback_data="relief_breathe")],
+            [InlineKeyboardButton("🧠 5-4-3-2-1 Grounding", callback_data="relief_ground_start")]
+        ]
+        await update.message.reply_text(
+            "🌿 *Quick Relief Tools*\n\n"
+            "I'm here with you. Choose an exercise below to help regulate your system right now:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        conn.close()
+        return
     elif text == "🛡️ Apply as Helper":
         cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
         row = cursor.fetchone()
