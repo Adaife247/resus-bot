@@ -759,7 +759,28 @@ async def resetme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     await update.message.reply_text("✅ Your old account has been securely wiped. Tap /start to generate your new Friendly Anonymous handle.")
-
+# 🚨 NEW: Master Feed Wipe (Admin Only) 🚨
+async def wipefeed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_chat.id
+    if user_id not in ADMIN_IDS: return
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Delete all posts and reactions
+    cursor.execute('DELETE FROM posts')
+    cursor.execute('DELETE FROM reactions')
+    
+    # Reset the autoincrement counter back to 0
+    try:
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='posts'")
+    except Exception:
+        pass # Fails silently if the table is already completely empty
+        
+    conn.commit()
+    conn.close()
+    
+    await update.message.reply_text("🧼 **Clean Slate!** All posts and reactions have been permanently wiped from the database.", parse_mode='Markdown')
 # --- Main Application ---
 def main():
     init_db()
@@ -771,6 +792,7 @@ def main():
     app.add_handler(CommandHandler("reachout", reachout_command))
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(CommandHandler("resetme", resetme_command))
+    app.add_handler(CommandHandler("wipefeed", wipefeed_command))
     
     # Registering the new final layer commands
     app.add_handler(CommandHandler("help", help_command))
