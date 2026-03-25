@@ -148,38 +148,41 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
-    
+
     if is_banned(user_id):
         await query.answer("Your account is restricted.", show_alert=True)
         return
 
     data = query.data
-    
+
+    # --- 1. HEART REACTIONS ---
     if data.startswith("heart_"):
         await query.answer()
         post_id = int(data.split("_")[1])
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute('SELECT * FROM reactions WHERE post_id = ? AND chat_id = ?', (post_id, user_id))
+        cursor.execute('SELECT 1 FROM reactions WHERE post_id=? AND chat_id=?', (post_id, user_id))
         if cursor.fetchone():
-            cursor.execute('DELETE FROM reactions WHERE post_id = ? AND chat_id = ?', (post_id, user_id))
+            cursor.execute('DELETE FROM reactions WHERE post_id=? AND chat_id=?', (post_id, user_id))
         else:
             cursor.execute('INSERT INTO reactions (post_id, chat_id) VALUES (?, ?)', (post_id, user_id))
-        
+            
         conn.commit()
         conn.close()
         await query.edit_message_reply_markup(reply_markup=build_post_keyboard(post_id))
-        
+
+    # --- 2. REPLYING ---
     elif data.startswith("reply_"):
         await query.answer()
         post_id = int(data.split("_")[1])
         user_ui_states[user_id] = f"replying_{post_id}"
         await context.bot.send_message(
-            chat_id=user_id, 
-            text="✍️ Type your reply below. It will be sent anonymously to the author.\n*(Or type 'cancel' to abort)*"
+            chat_id=user_id,
+            text="💬 Type your reply below. It will be sent anonymously to the author.\n*(Or type 'cancel' to abort)*"
         )
 
+    # --- 3. 1:1 SUPPORT SESSIONS ---
     elif data.startswith("support_"):
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -188,7 +191,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if not helper or helper['status'] != 'approved':
             await query.answer("Access Denied", show_alert=True)
-            await context.bot.send_message(chat_id=user_id, text="🫂 Only approved helpers can start 1:1 sessions. Tap '🛡️ Apply as Helper' in the menu.")
+            await context.bot.send_message(chat_id=user_id, text="⚠️ Only approved helpers can start 1:1 sessions. Tap '🤝 Apply as Helper' first.")
             conn.close()
             return
 
@@ -202,6 +205,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         op_chat_id = row['author_chat_id']
+        
         if op_chat_id == user_id:
             await context.bot.send_message(chat_id=user_id, text="You cannot support your own post.")
             conn.close()
@@ -221,8 +225,72 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_ui_states.pop(user_id, None)
         user_ui_states.pop(op_chat_id, None)
         
-        await context.bot.send_message(chat_id=user_id, text="🫂 1:1 Session started! You are now connected to the author. Tap '🛑 End Session' when done.")
-        await context.bot.send_message(chat_id=op_chat_id, text="🫂 A vetted helper has connected with you regarding your recent post. Tap '🛑 End Session' when done.")
+        await context.bot.send_message(chat_id=user_id, text="🟢 1:1 Session started! You are now connected to the author. Tap 🛑 End Session when done.")
+        await context.bot.send_message(chat_id=op_chat_id, text="🟢 A vetted helper has connected with you regarding your recent post. Tap 🛑 End Session when done.")
+
+    # --- 4. QUICK RELIEF: BOX BREATHING ---
+    elif data == "relief_breathe":
+        await query.answer()
+        msg = await context.bot.send_message(chat_id=user_id, text="🌬️ Get ready. We will do 3 cycles of Box Breathing to lower your heart rate.")
+        await asyncio.sleep(2.5)
+        
+        cycles = 3
+        for _ in range(cycles):
+            await msg.edit_text("🟢 **Inhale** through your nose... (4s)", parse_mode='Markdown')
+            await asyncio.sleep(4)
+            await msg.edit_text("🟡 **Hold** your breath... (4s)", parse_mode='Markdown')
+            await asyncio.sleep(4)
+            await msg.edit_text("🔵 **Exhale** slowly through your mouth... (4s)", parse_mode='Markdown')
+            await asyncio.sleep(4)
+            await msg.edit_text("⚪ **Rest** and hold empty... (4s)", parse_mode='Markdown')
+            await asyncio.sleep(4)
+            
+        await msg.edit_text("✅ Breathing cycle complete. You did great.\n\nTap 🧘‍♀️ Quick Relief on your menu if you need to go again.")
+
+    # --- 5. QUICK RELIEF: 5-4-3-2-1 GROUNDING ---
+    elif data == "relief_ground_start":
+        await query.answer()
+        keyboard = [[InlineKeyboardButton("Next Step ➡️", callback_data="ground_5")]]
+        await query.edit_message_text(
+            "🧠 *5-4-3-2-1 Sensory Grounding*\n\nTake a deep breath. Look around your physical space.\n\n"
+            "Find **5 things you can SEE**.\n*(e.g., a pen, a shadow, a cloud)*\n\n"
+            "Name them silently to yourself, then tap Next.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    elif data.startswith("ground_"):
+        step = data.split("_")[1]
+        await query.answer()
+        
+        if step == "5":
+            keyboard = [[InlineKeyboardButton("Next Step ➡️", callback_data="ground_4")]]
+            await query.edit_message_text(
+                "Find **4 things you can FEEL or TOUCH**.\n*(e.g., the texture of your clothes, your feet on the floor)*\n\nNotice how they physically feel, then tap Next.", 
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+            )
+        elif step == "4":
+            keyboard = [[InlineKeyboardButton("Next Step ➡️", callback_data="ground_3")]]
+            await query.edit_message_text(
+                "Find **3 things you can HEAR**.\n*(e.g., a fan, distant traffic, your own breath)*\n\nListen closely, then tap Next.", 
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+            )
+        elif step == "3":
+            keyboard = [[InlineKeyboardButton("Next Step ➡️", callback_data="ground_2")]]
+            await query.edit_message_text(
+                "Find **2 things you can SMELL**.\n*(e.g., fresh air, coffee, your soap)*\n\nIf you can't smell anything, just imagine your favorite scent. Then tap Next.", 
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+            )
+        elif step == "2":
+            keyboard = [[InlineKeyboardButton("Finish ➡️", callback_data="ground_1")]]
+            await query.edit_message_text(
+                "Find **1 thing you can TASTE**.\n*(e.g., toothpaste, a sip of water, or just notice the state of your mouth)*\n\nThen tap Finish.", 
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown'
+            )
+        elif step == "1":
+            await query.edit_message_text(
+                "✅ Grounding complete. You have successfully anchored your brain back to the present moment.\n\nTake one final deep breath. You are safe."
+            )
 
 # --- Central Routing for Text Input ---
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
