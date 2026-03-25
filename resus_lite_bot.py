@@ -195,47 +195,72 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_menu()
     )
 async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin-only command to send a direct message to a specific user handle."""
+    """Admin-only command to force-start an anonymous 1:1 session with a user in distress."""
     admin_id = update.message.from_user.id
     
-    # Security check: Only allow authorized admins to use this
+    # Security check
     if admin_id not in ADMIN_IDS:
         return
 
-    # Check if the admin formatted the command correctly
-    # Example: /reachout Calm-River-02 I am the admin, please talk to me.
+    # Check format: /reachout Calm-River-02
     args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("⚠️ **Format:** `/reachout [Handle] [Your Message]`", parse_mode='Markdown')
+    if len(args) < 1:
+        await update.message.reply_text("⚠️ **Format:** `/reachout [Handle]`", parse_mode='Markdown')
         return
 
     target_handle = args[0]
-    message_body = " ".join(args[1:])
 
     # Look up their hidden Telegram ID using their Handle
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
     row = cursor.fetchone()
-    conn.close()
 
     if not row:
         await update.message.reply_text(f"❌ Could not find a user with the handle {target_handle}.")
+        conn.close()
         return
 
     target_chat_id = row['chat_id']
     
+    # Prevent admin from chatting with themselves
+    if target_chat_id == admin_id:
+        await update.message.reply_text("❌ You cannot start a session with yourself.")
+        conn.close()
+        return
+
+    # Clear any existing sessions either person is currently in to force the emergency connection
+    cursor.execute('DELETE FROM active_sessions WHERE chat_id IN (?, ?) OR peer_id IN (?, ?)', 
+                   (admin_id, target_chat_id, admin_id, target_chat_id))
+
+    # Link them together in a 2-way chat!
+    cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (admin_id, target_chat_id))
+    cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (target_chat_id, admin_id))
+    
+    conn.commit()
+    conn.close()
+
+    # 1. Notify the User (Keeps them anonymous, lets them know it's a safe space)
     try:
-        # Send the emergency message to the user
         await context.bot.send_message(
             chat_id=target_chat_id,
-            text=f"🛡️ **Admin Support Outreach** 🛡️\n\n{message_body}\n\n_This is a priority message from the campus moderation team._",
+            text="🛡️ **Admin Support Outreach** 🛡️\n\n"
+                 "A campus admin has opened a secure, private chat with you to offer support. "
+                 "Your identity remains completely anonymous.\n\n"
+                 "You can reply directly to this message to chat with them. Tap 🛑 End Session when you are safe.",
             parse_mode='Markdown'
         )
-        # Confirm to the admin that it worked
-        await update.message.reply_text(f"✅ Message successfully pushed to {target_handle}.")
     except Exception as e:
-        await update.message.reply_text(f"❌ Failed to send message to {target_handle}: {e}")
+        await update.message.reply_text(f"❌ Failed to reach the user. They may have blocked the bot. Error: {e}")
+        return
+
+    # 2. Notify the Admin
+    await update.message.reply_text(
+        f"🟢 **Connection Secured.**\n\n"
+        f"You are now in a live, 1:1 anonymous chat with `{target_handle}`. Anything you type now will go directly to them.\n\n"
+        f"Tap 🛑 End Session when the crisis is resolved.",
+        parse_mode='Markdown'
+    )
 
 # --- Callback & Interactive Menus ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
