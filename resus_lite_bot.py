@@ -15,7 +15,6 @@ BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64" # Replace if not us
 ADMIN_IDS = [6102322573] # <--- REPLACE WITH YOUR ACTUAL TELEGRAM ID
 FEED_CHAT_ID = "-1003645637131" 
 
-BANNED_WORDS = ['suicide', 'kill myself', 'end it all']
 CRISIS_MESSAGE = (
     "⚠️ We noticed your message contains concerning words. "
     "If you are in distress, please know you are not alone. "
@@ -101,7 +100,38 @@ def is_banned(chat_id: int) -> bool:
     return banned
 
 def check_moderation(text: str) -> bool:
-    return any(word in text.lower() for word in BANNED_WORDS)
+    """
+    Advanced Heuristics Engine for Distress Detection
+    Returns True if severe distress is detected, False otherwise.
+    """
+    text_lower = text.lower()
+    
+    # LEVEL 1: Immediate Crisis & Self-Harm Intent
+    # Catches explicit phrases and common spelling workarounds (e.g., "k!ll", "k1ll")
+    crisis_pattern = r"(suicide|k[i!1]ll\s*myself|end\s*it\s*all|want\s*to\s*d[i!1]e|sleep\s*forever|no\s*point\s*in\s*living)"
+    
+    # LEVEL 2: Severe Somatic / Biological Distress
+    # Catches physical symptoms of severe nervous system dysregulation and panic
+    somatic_pattern = r"(can\'?t\s*breathe|heart\s*is\s*(exploding|racing)|chest\s*is\s*crushing|completely\s*numb|make\s*it\s*stop|losing\s*my\s*mind)"
+    
+    # LEVEL 3: Severe Hopelessness & Apathy
+    # Catches dangerous depressive states and extreme cognitive exhaustion
+    apathy_pattern = r"(giving\s*up|done\s*trying|nothing\s*matters\s*anymore|too\s*exhausted\s*to\s*(live|try))"
+    
+    # Evaluate the text against the patterns
+    if re.search(crisis_pattern, text_lower):
+        logger.warning(f"CRISIS FLAG TRIGGERED: {text}")
+        return True
+        
+    if re.search(somatic_pattern, text_lower):
+        logger.warning(f"SOMATIC PANIC FLAG TRIGGERED: {text}")
+        return True
+        
+    if re.search(apathy_pattern, text_lower):
+        logger.warning(f"APATHY FLAG TRIGGERED: {text}")
+        return True
+        
+    return False
 
 def get_heart_count(post_id: int) -> int:
     conn = get_db_connection()
