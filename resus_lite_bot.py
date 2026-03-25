@@ -105,6 +105,34 @@ def check_moderation(text: str) -> bool:
     Returns True if severe distress is detected, False otherwise.
     """
     text_lower = text.lower()
+
+    # LEVEL 1: Immediate Crisis & Self-Harm Intent
+    # Catches explicit phrases and common spelling workarounds (e.g., "k!ll", "k1ll")
+    crisis_pattern = r"(suicide|k[i!1]ll\s*myself|end\s*it\s*all|want\s*to\s*d[i!1]e|sleep\s*forever|no\s*point\s*in\s*living)"
+
+    # LEVEL 2: Severe Somatic / Biological Distress
+    # Catches physical symptoms of severe nervous system dysregulation and panic
+    somatic_pattern = r"(can\'?t\s*breathe|heart\s*is\s*(exploding|racing)|chest\s*is\s*crushing|completely\s*numb|make\s*it\s*stop|losing\s*my\s*mind)"
+
+    # LEVEL 3: Severe Hopelessness & Apathy
+    # Catches dangerous depressive states and extreme cognitive exhaustion
+    apathy_pattern = r"(giving\s*up|done\s*trying|nothing\s*matters\s*anymore|too\s*exhausted\s*to\s*(live|try))"
+
+    # Evaluate the text against the patterns
+    if re.search(crisis_pattern, text_lower):
+        logger.warning(f"CRISIS FLAG TRIGGERED: {text}")
+        return True
+
+    if re.search(somatic_pattern, text_lower):
+        logger.warning(f"SOMATIC PANIC FLAG TRIGGERED: {text}")
+        return True
+
+    if re.search(apathy_pattern, text_lower):
+        logger.warning(f"APATHY FLAG TRIGGERED: {text}")
+        return True
+
+    return False
+
 async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes.DEFAULT_TYPE):
     """Silently forwards flagged distress messages to all admins."""
     handle = get_or_create_user(chat_id)
@@ -114,39 +142,12 @@ async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes
         f"**Intercepted Message:**\n_{text}_\n\n"
         f"This message was blocked from the public feed or 1:1 session."
     )
-    
+
     for admin_id in ADMIN_IDS:
         try:
             await context.bot.send_message(chat_id=admin_id, text=alert_msg, parse_mode='Markdown')
         except Exception as e:
             logger.error(f"Failed to send crisis alert to admin {admin_id}: {e}")
-    
-    # LEVEL 1: Immediate Crisis & Self-Harm Intent
-    # Catches explicit phrases and common spelling workarounds (e.g., "k!ll", "k1ll")
-    crisis_pattern = r"(suicide|k[i!1]ll\s*myself|end\s*it\s*all|want\s*to\s*d[i!1]e|sleep\s*forever|no\s*point\s*in\s*living)"
-    
-    # LEVEL 2: Severe Somatic / Biological Distress
-    # Catches physical symptoms of severe nervous system dysregulation and panic
-    somatic_pattern = r"(can\'?t\s*breathe|heart\s*is\s*(exploding|racing)|chest\s*is\s*crushing|completely\s*numb|make\s*it\s*stop|losing\s*my\s*mind)"
-    
-    # LEVEL 3: Severe Hopelessness & Apathy
-    # Catches dangerous depressive states and extreme cognitive exhaustion
-    apathy_pattern = r"(giving\s*up|done\s*trying|nothing\s*matters\s*anymore|too\s*exhausted\s*to\s*(live|try))"
-    
-    # Evaluate the text against the patterns
-    if re.search(crisis_pattern, text_lower):
-        logger.warning(f"CRISIS FLAG TRIGGERED: {text}")
-        return True
-        
-    if re.search(somatic_pattern, text_lower):
-        logger.warning(f"SOMATIC PANIC FLAG TRIGGERED: {text}")
-        return True
-        
-    if re.search(apathy_pattern, text_lower):
-        logger.warning(f"APATHY FLAG TRIGGERED: {text}")
-        return True
-        
-    return False
 
 def get_heart_count(post_id: int) -> int:
     conn = get_db_connection()
@@ -275,7 +276,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=op_chat_id, text="🟢 A vetted helper has connected with you regarding your recent post. Tap 🛑 End Session when done.")
 
     # --- 4. QUICK RELIEF: BOX BREATHING ---
-# --- 4. QUICK RELIEF: BOX BREATHING ---
     elif data == "relief_breathe":
         await query.answer()
         msg = await context.bot.send_message(chat_id=user_id, text="🌬️ Get ready. We will do 3 cycles of Box Breathing to lower your heart rate.")
@@ -424,13 +424,15 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         peer_id = session['peer_id']
         conn.close()
         if check_moderation(text):
-        await update.message.reply_text(CRISIS_MESSAGE)
-        await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
+            await update.message.reply_text(CRISIS_MESSAGE)
+            await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
+            return
+        await context.bot.send_message(chat_id=peer_id, text=f"💬 Anonymous message: {text}")
         return
-        
+
     current_state = user_ui_states.get(chat_id)
-    
-  if current_state == "posting":
+
+    if current_state == "posting":
         if check_moderation(text):
             await update.message.reply_text(CRISIS_MESSAGE)
             await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
