@@ -16,6 +16,7 @@ from telegram.ext import (
 BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64" 
 ADMIN_IDS = [6102322573] 
 FEED_CHAT_ID = "-1003645637131" 
+CHANNEL_LINK = "https://t.me/+8XX156VITLplNzQ0" # <--- REPLACE THIS WITH YOUR REAL LINK
 
 # --- Anti-Spam Configuration ---
 POST_COOLDOWN_SECONDS = 180  
@@ -178,7 +179,7 @@ def get_main_menu(chat_id: int):
     keyboard.append([KeyboardButton("👤 My Handle")])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# 🚨 UPGRADED: Added the Medical Disclaimer 🚨
+# 🚨 UPGRADED: Start Command with Link to the Feed 🚨
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if is_banned(chat_id): return
@@ -196,6 +197,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Welcome to Resus Lite! 🌿\n\n"
             f"Your assigned anonymous handle is: `{handle}`\n\n"
+            f"📢 **Join the Community:** [Click here to enter the Public Feed]({CHANNEL_LINK}) to read and support other students.\n\n"
             f"⚠️ *Disclaimer: This is a peer-to-peer support space, not a substitute for clinical therapy or emergency medical care. If you are in immediate physical danger, please contact local emergency services.*\n\n"
             f"Use the menu below to navigate, or type /help to learn about your privacy.",
             reply_markup=get_main_menu(chat_id),
@@ -203,9 +205,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "Welcome back to Resus Lite! 🌿\n\n"
-            "Use the menu below to navigate.",
-            reply_markup=get_main_menu(chat_id)
+            f"Welcome back to Resus Lite! 🌿\n\n"
+            f"📢 **[Go to the Public Feed]({CHANNEL_LINK})**\n\n"
+            f"Use the menu below to navigate.",
+            reply_markup=get_main_menu(chat_id),
+            parse_mode='Markdown'
         )
 
 # 🚨 NEW: The Privacy Guide Command 🚨
@@ -226,7 +230,6 @@ async def deletemydata_command(update: Update, context: ContextTypes.DEFAULT_TYP
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Safely disconnect them if they are in an active session
     cursor.execute('SELECT peer_id FROM active_sessions WHERE chat_id = ?', (chat_id,))
     session = cursor.fetchone()
     if session:
@@ -235,7 +238,6 @@ async def deletemydata_command(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
             
-    # Wipe their entire digital footprint
     cursor.execute('DELETE FROM users WHERE chat_id = ?', (chat_id,))
     cursor.execute('DELETE FROM helpers WHERE chat_id = ?', (chat_id,))
     cursor.execute('DELETE FROM posts WHERE author_chat_id = ?', (chat_id,))
@@ -556,7 +558,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='MarkdownV2',
                 reply_markup=build_post_keyboard(post_id)
             )
-            await update.message.reply_text("✅ Your post has been published anonymously to the community.")
+            # 🚨 UPGRADED: Success Message with Channel Link 🚨
+            await update.message.reply_text(
+                f"✅ Your post has been published anonymously to the [Public Feed]({CHANNEL_LINK}).",
+                parse_mode='Markdown'
+            )
 
         elif current_state.startswith("replying_"):
             post_id = int(current_state.split("_")[1])
