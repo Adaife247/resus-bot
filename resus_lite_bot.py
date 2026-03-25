@@ -400,16 +400,28 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
         
-    elif text == "🤝 Apply as Helper":
+elif text == "🤝 Apply as Helper":
         cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
         row = cursor.fetchone()
+        
         if row:
-            msg = "You are already approved!" if row['status'] == 'approved' else "Your application is pending admin review."
-            await update.message.reply_text(msg)
+            if row['status'] == 'approved' or row['status'] == 'offline':
+                await update.message.reply_text(
+                    "You are already an approved helper! Your menu has been refreshed.", 
+                    reply_markup=get_main_menu(chat_id) # <-- Forces the keyboard to update
+                )
+            else:
+                await update.message.reply_text(
+                    "Your application is still pending admin review.",
+                    reply_markup=get_main_menu(chat_id)
+                )
         else:
             cursor.execute("INSERT INTO helpers (chat_id, status) VALUES (?, 'pending')", (chat_id,))
             conn.commit()
-            await update.message.reply_text("Your application has been submitted! An admin will review it soon.")
+            await update.message.reply_text(
+                "Your application has been submitted! An admin will review it soon.",
+                reply_markup=get_main_menu(chat_id)
+            )
             for admin in ADMIN_IDS:
                 try:
                     handle = get_or_create_user(chat_id)
