@@ -105,6 +105,21 @@ def check_moderation(text: str) -> bool:
     Returns True if severe distress is detected, False otherwise.
     """
     text_lower = text.lower()
+async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes.DEFAULT_TYPE):
+    """Silently forwards flagged distress messages to all admins."""
+    handle = get_or_create_user(chat_id)
+    alert_msg = (
+        f"🚨 **CRISIS ALERT INITIATED** 🚨\n\n"
+        f"**User Handle:** `{handle}`\n"
+        f"**Intercepted Message:**\n_{text}_\n\n"
+        f"This message was blocked from the public feed or 1:1 session."
+    )
+    
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=alert_msg, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Failed to send crisis alert to admin {admin_id}: {e}")
     
     # LEVEL 1: Immediate Crisis & Self-Harm Intent
     # Catches explicit phrases and common spelling workarounds (e.g., "k!ll", "k1ll")
@@ -409,16 +424,16 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         peer_id = session['peer_id']
         conn.close()
         if check_moderation(text):
-            await update.message.reply_text(CRISIS_MESSAGE)
-            return
-        await context.bot.send_message(chat_id=peer_id, text=f"💬: {text}")
+        await update.message.reply_text(CRISIS_MESSAGE)
+        await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
         return
         
     current_state = user_ui_states.get(chat_id)
     
-    if current_state == "posting":
+  if current_state == "posting":
         if check_moderation(text):
             await update.message.reply_text(CRISIS_MESSAGE)
+            await notify_admins_of_crisis(chat_id, text, context) # <-- ADDED ESCALATION
             return
             
         handle = get_or_create_user(chat_id)
