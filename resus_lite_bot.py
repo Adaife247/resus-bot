@@ -16,9 +16,13 @@ ADMIN_IDS = [6102322573] # <--- REPLACE WITH YOUR ACTUAL TELEGRAM ID
 FEED_CHAT_ID = "-1003645637131" 
 
 CRISIS_MESSAGE = (
-    "⚠️ We noticed your message contains concerning words. "
-    "If you are in distress, please know you are not alone. "
-    "Reach out to a local crisis hotline or visit an emergency room immediately."
+    "🛑 *Message Paused*\n\n"
+    "I'm keeping this message off the public feed because it sounds like you are carrying an incredibly heavy burden right now, and peer-support isn't enough.\n\n"
+    "Your nervous system is overwhelmed, but you do not have to handle this alone. The admin team has been notified.\n\n"
+    "**Immediate Support Options:**\n"
+    "📞 **Mentally Aware Nigeria (MANI):** 0809 111 6264\n"
+    "🏥 **FUOYE Health Centre:** (Go directly to the campus clinic for immediate stabilization)\n"
+    "🧘‍♀️ Tap **Quick Relief** on your menu to help slow your heart rate down right now."
 )
 
 # --- Logging Setup ---
@@ -190,6 +194,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "This is a safe, anonymous space. Use the menu below to navigate.",
         reply_markup=get_main_menu()
     )
+async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only command to send a direct message to a specific user handle."""
+    admin_id = update.message.from_user.id
+    
+    # Security check: Only allow authorized admins to use this
+    if admin_id not in ADMIN_IDS:
+        return
+
+    # Check if the admin formatted the command correctly
+    # Example: /reachout Calm-River-02 I am the admin, please talk to me.
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ **Format:** `/reachout [Handle] [Your Message]`", parse_mode='Markdown')
+        return
+
+    target_handle = args[0]
+    message_body = " ".join(args[1:])
+
+    # Look up their hidden Telegram ID using their Handle
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        await update.message.reply_text(f"❌ Could not find a user with the handle {target_handle}.")
+        return
+
+    target_chat_id = row['chat_id']
+    
+    try:
+        # Send the emergency message to the user
+        await context.bot.send_message(
+            chat_id=target_chat_id,
+            text=f"🛡️ **Admin Support Outreach** 🛡️\n\n{message_body}\n\n_This is a priority message from the campus moderation team._",
+            parse_mode='Markdown'
+        )
+        # Confirm to the admin that it worked
+        await update.message.reply_text(f"✅ Message successfully pushed to {target_handle}.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to send message to {target_handle}: {e}")
 
 # --- Callback & Interactive Menus ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -562,6 +608,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("approve", approve_helper))
     app.add_handler(CommandHandler("ban", ban_user))
+    app.add_handler(CommandHandler("reachout", reachout_command))
     
     # 🚨 THE MISSING HANDLER IS NOW SECURELY IN PLACE 🚨
     app.add_handler(CommandHandler("stats", admin_stats))
