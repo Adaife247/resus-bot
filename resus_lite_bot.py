@@ -229,23 +229,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=op_chat_id, text="🟢 A vetted helper has connected with you regarding your recent post. Tap 🛑 End Session when done.")
 
     # --- 4. QUICK RELIEF: BOX BREATHING ---
+# --- 4. QUICK RELIEF: BOX BREATHING ---
     elif data == "relief_breathe":
         await query.answer()
         msg = await context.bot.send_message(chat_id=user_id, text="🌬️ Get ready. We will do 3 cycles of Box Breathing to lower your heart rate.")
         await asyncio.sleep(2.5)
         
-        cycles = 3
-        for _ in range(cycles):
-            await msg.edit_text("🟢 **Inhale** through your nose... (4s)", parse_mode='Markdown')
-            await asyncio.sleep(4)
-            await msg.edit_text("🟡 **Hold** your breath... (4s)", parse_mode='Markdown')
-            await asyncio.sleep(4)
-            await msg.edit_text("🔵 **Exhale** slowly through your mouth... (4s)", parse_mode='Markdown')
-            await asyncio.sleep(4)
-            await msg.edit_text("⚪ **Rest** and hold empty... (4s)", parse_mode='Markdown')
-            await asyncio.sleep(4)
-            
-        await msg.edit_text("✅ Breathing cycle complete. You did great.\n\nTap 🧘‍♀️ Quick Relief on your menu if you need to go again.")
+        try:
+            cycles = 3
+            for _ in range(cycles):
+                await msg.edit_text("🟢 *Inhale* through your nose... (4s)", parse_mode='Markdown')
+                await asyncio.sleep(4)
+                await msg.edit_text("🟡 *Hold* your breath... (4s)", parse_mode='Markdown')
+                await asyncio.sleep(4)
+                await msg.edit_text("🔵 *Exhale* slowly through your mouth... (4s)", parse_mode='Markdown')
+                await asyncio.sleep(4)
+                await msg.edit_text("⚪ *Rest* and hold empty... (4s)", parse_mode='Markdown')
+                await asyncio.sleep(4)
+                
+            await msg.edit_text("✅ Breathing cycle complete. You did great.\n\nTap 🧘‍♀️ Quick Relief on your menu if you need to go again.")
+        except Exception as e:
+            # If Telegram rejects the edit or hits a timeout, it will print the error directly to you!
+            logger.error(f"Breathing visualizer crashed: {e}")
+            await context.bot.send_message(chat_id=user_id, text=f"❌ Oops, the visualizer hit a snag: {e}")
 
     # --- 5. QUICK RELIEF: 5-4-3-2-1 GROUNDING ---
     elif data == "relief_ground_start":
