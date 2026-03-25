@@ -158,7 +158,6 @@ def build_post_keyboard(post_id: int) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# 🚨 UPGRADED: Dynamic Main Menu (Morphes based on Helper Status) 🚨
 def get_main_menu(chat_id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -171,7 +170,6 @@ def get_main_menu(chat_id: int):
         [KeyboardButton("🧘‍♀️ Quick Relief")]
     ]
 
-    # If they are an approved helper (active or offline), show the Duty toggle. Otherwise, Apply.
     if helper and helper['status'] in ['approved', 'offline']:
         keyboard[1].append(KeyboardButton("🔔 Toggle Duty"))
     else:
@@ -180,12 +178,11 @@ def get_main_menu(chat_id: int):
     keyboard.append([KeyboardButton("👤 My Handle")])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# 🚨 UPGRADED: Context-Aware Start Command 🚨
+# 🚨 UPGRADED: Added the Medical Disclaimer 🚨
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if is_banned(chat_id): return
     
-    # Check if they are brand new BEFORE creating the handle
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT handle FROM users WHERE chat_id = ?', (chat_id,))
@@ -199,7 +196,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Welcome to Resus Lite! 🌿\n\n"
             f"Your assigned anonymous handle is: `{handle}`\n\n"
-            f"This is a safe, anonymous space. Use the menu below to navigate.",
+            f"⚠️ *Disclaimer: This is a peer-to-peer support space, not a substitute for clinical therapy or emergency medical care. If you are in immediate physical danger, please contact local emergency services.*\n\n"
+            f"Use the menu below to navigate, or type /help to learn about your privacy.",
             reply_markup=get_main_menu(chat_id),
             parse_mode='Markdown'
         )
@@ -209,6 +207,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Use the menu below to navigate.",
             reply_markup=get_main_menu(chat_id)
         )
+
+# 🚨 NEW: The Privacy Guide Command 🚨
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "🛡️ *Your Privacy & Safety on Resus Lite*\n\n"
+        "**1. Total Anonymity:** Your real Telegram name and phone number are hidden. Other students only ever see your Friendly Handle (like `Calm-River-02`).\n"
+        "**2. 1:1 Sessions:** If you tap 'Support' on a post, you enter a private, 2-way anonymous chat. Tap '🛑 End Session' to disconnect instantly.\n"
+        "**3. Your Data:** You are in control. If you ever want to erase your account, posts, and history, just type `/deletemydata`.\n\n"
+        "Remember, you don't have to carry it all alone. 🌿"
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+# 🚨 NEW: User Data Deletion Command 🚨
+async def deletemydata_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Safely disconnect them if they are in an active session
+    cursor.execute('SELECT peer_id FROM active_sessions WHERE chat_id = ?', (chat_id,))
+    session = cursor.fetchone()
+    if session:
+        try:
+            await context.bot.send_message(chat_id=session['peer_id'], text="The other user has left the platform. Session ended.")
+        except Exception:
+            pass
+            
+    # Wipe their entire digital footprint
+    cursor.execute('DELETE FROM users WHERE chat_id = ?', (chat_id,))
+    cursor.execute('DELETE FROM helpers WHERE chat_id = ?', (chat_id,))
+    cursor.execute('DELETE FROM posts WHERE author_chat_id = ?', (chat_id,))
+    cursor.execute('DELETE FROM reactions WHERE chat_id = ?', (chat_id,))
+    cursor.execute('DELETE FROM active_sessions WHERE chat_id = ? OR peer_id = ?', (chat_id, chat_id))
+    
+    conn.commit()
+    conn.close()
+    
+    await update.message.reply_text("✅ Success. Your account, handles, posts, and all associated data have been completely erased from the database.", reply_markup=ReplyKeyboardMarkup([['/start']], resize_keyboard=True))
 
 # --- Callback & Interactive Menus ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -408,7 +445,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if row['status'] == 'approved' or row['status'] == 'offline':
                 await update.message.reply_text(
                     "You are already an approved helper! Your menu has been refreshed.", 
-                    reply_markup=get_main_menu(chat_id) # <-- Forces the keyboard to update
+                    reply_markup=get_main_menu(chat_id) 
                 )
             else:
                 await update.message.reply_text(
@@ -431,7 +468,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
 
-    # 🚨 UPGRADED: The New Duty Toggle Button Logic 🚨
     elif text == "🔔 Toggle Duty":
         cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
         helper = cursor.fetchone()
@@ -562,7 +598,6 @@ async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
             
             await update.message.reply_text(f"{target_handle} approved.")
-            # Sending them the fresh menu so the "Apply" button instantly turns into "Toggle Duty"
             await context.bot.send_message(
                 chat_id=row['chat_id'], 
                 text="🎉 You are now an approved helper!\n\nYour menu has updated. Use '🔔 Toggle Duty' to clock in and out.",
@@ -674,13 +709,42 @@ async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-# 🚨 UPGRADED: The Reset Command 🚨
+# 🚨 NEW: The Broadcast Command (Admin Only) 🚨
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_id = update.effective_chat.id
+    if admin_id not in ADMIN_IDS: return
+    
+    message = " ".join(context.args)
+    if not message:
+        await update.message.reply_text("⚠️ **Format:** `/broadcast [Your message here]`", parse_mode='Markdown')
+        return
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT chat_id FROM users')
+    users = cursor.fetchall()
+    conn.close()
+    
+    success_count = 0
+    await update.message.reply_text(f"📢 Broadcasting to {len(users)} users...")
+    
+    for user in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user['chat_id'], 
+                text=f"📢 **Platform Update:**\n\n{message}", 
+                parse_mode='Markdown'
+            )
+            success_count += 1
+            await asyncio.sleep(0.05) # Prevents hitting Telegram rate limits
+        except Exception:
+            pass # User might have blocked the bot
+            
+    await update.message.reply_text(f"✅ Broadcast complete. Successfully delivered to {success_count} users.")
+
 async def resetme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    
-    # Absolute security check. Nobody but you can trigger this.
-    if user_id not in ADMIN_IDS:
-        return
+    if user_id not in ADMIN_IDS: return
         
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -702,7 +766,10 @@ def main():
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(CommandHandler("resetme", resetme_command))
     
-    # We removed the /duty command here because it is entirely handled by the menu button now!
+    # Registering the new final layer commands
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("broadcast", broadcast_command))
+    app.add_handler(CommandHandler("deletemydata", deletemydata_command))
     
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
