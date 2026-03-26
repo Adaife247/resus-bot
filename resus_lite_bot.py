@@ -205,10 +205,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT handle FROM users WHERE chat_id = ?', (chat_id,))
-    is_new_user = cursor.fetchone() is None
+  is_new_user = cursor.fetchone() is None
     
+    # 🛑 THE VIP BOUNCER (Locks the bot for new users without the link)
+    if is_new_user:
+        # Check if they have the secret 'medbeta' password in the link
+        if not context.args or context.args[0] != "medbeta":
+            await update.message.reply_text(
+                "🔒 **Private Beta**\n\nResus Lite is currently in a closed beta exclusively for Medical Students. You need a VIP invite link to enter.",
+                parse_mode='Markdown'
+            )
+            conn.close()
+            return
+            
     handle = get_or_create_user(chat_id)
-    user_ui_states.pop(chat_id, None) 
+    user_ui_states.pop(chat_id, None)
     
     if context.args:
         payload = context.args[0]
