@@ -115,22 +115,27 @@ def is_banned(chat_id: int) -> bool:
 
 def check_moderation(text: str) -> bool:
     text_lower = text.lower()
+    
+    # Crisis patterns
     crisis_pattern = r"(suicide|k[i!1]ll\s*myself|end\s*it\s*all|want\s*to\s*d[i!1]e|sleep\s*forever|no\s*point\s*in\s*living)"
     somatic_pattern = r"(can\'?t\s*breathe|heart\s*is\s*(exploding|racing)|chest\s*is\s*crushing|completely\s*numb|make\s*it\s*stop|losing\s*my\s*mind)"
     apathy_pattern = r"(giving\s*up|done\s*trying|nothing\s*matters\s*anymore|too\s*exhausted\s*to\s*(live|try))"
+    
+    # 🚨 Anti-Spam & Anti-Begging Patterns
+    scam_pattern = r"(\b\d{10}\b|urgent\s*2k|send\s*money|send\s*funds|account\s*number)"
+    link_pattern = r"(http[s]?://|www\.|t\.me/|\.com|\.ng)"
 
-    if re.search(crisis_pattern, text_lower):
-        return True
-    if re.search(somatic_pattern, text_lower):
-        return True
-    if re.search(apathy_pattern, text_lower):
-        return True
+    if re.search(crisis_pattern, text_lower): return True
+    if re.search(somatic_pattern, text_lower): return True
+    if re.search(apathy_pattern, text_lower): return True
+    if re.search(scam_pattern, text_lower): return True
+    if re.search(link_pattern, text_lower): return True
     return False
 
 async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes.DEFAULT_TYPE):
     handle = get_or_create_user(chat_id)
     alert_msg = (
-        f"🚨 **CRISIS ALERT INITIATED** 🚨\n\n"
+        f"🚨 **CRISIS/SPAM ALERT INITIATED** 🚨\n\n"
         f"**User Handle:** `{handle}`\n"
         f"**Intercepted Message:**\n_{text}_\n\n"
         f"This message was blocked from the public feed or 1:1 session."
@@ -149,7 +154,6 @@ def get_heart_count(post_id: int) -> int:
     conn.close()
     return count
 
-# 🚨 UPGRADED: Deep Linking Teleporter Buttons 🚨
 def build_post_keyboard(post_id: int) -> InlineKeyboardMarkup:
     heart_count = get_heart_count(post_id)
     keyboard = [
@@ -181,7 +185,6 @@ def get_main_menu(chat_id: int):
     keyboard.append([KeyboardButton("👤 My Handle")])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# 🚨 UPGRADED: Context-Aware Start Command with Deep Linking 🚨
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if is_banned(chat_id): return
@@ -194,11 +197,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     handle = get_or_create_user(chat_id)
     user_ui_states.pop(chat_id, None) 
     
-    # --- DEEP LINK ROUTING (The Teleporter) ---
     if context.args:
         payload = context.args[0]
         
-        # If they clicked Reply...
         if payload.startswith("reply_"):
             post_id = int(payload.split("_")[1])
             user_ui_states[chat_id] = f"replying_{post_id}"
@@ -209,7 +210,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.close()
             return
             
-        # If they clicked Support...
         elif payload.startswith("support_"):
             cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
             helper = cursor.fetchone()
@@ -255,7 +255,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn.close()
 
-    # --- NORMAL START GREETING ---
     if is_new_user:
         await update.message.reply_text(
             f"Welcome to Resus Lite! 🌿\n\n"
@@ -310,7 +309,6 @@ async def deletemydata_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text("✅ Success. Your account, handles, posts, and all associated data have been completely erased from the database.", reply_markup=ReplyKeyboardMarkup([['/start']], resize_keyboard=True))
 
-# --- Callback & Interactive Menus ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -402,7 +400,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "✅ Grounding complete. You have successfully anchored your brain back to the present moment.\n\nTake one final deep breath. You are safe."
             )
 
-# --- Central Routing for Text Input ---
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = update.message.text
@@ -603,19 +600,19 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS: return
     try:
-        target_handle = context.args[0].upper()
+        target_handle = context.args[0]
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
+        cursor.execute('SELECT chat_id FROM users WHERE handle COLLATE NOCASE = ?', (target_handle,))
         row = cursor.fetchone()
+        
         if row:
             cursor.execute("UPDATE helpers SET status = 'approved' WHERE chat_id = ?", (row['chat_id'],))
             if cursor.rowcount == 0: cursor.execute("INSERT INTO helpers (chat_id, status) VALUES (?, 'approved')", (row['chat_id'],))
             conn.commit()
             
-            await update.message.reply_text(f"{target_handle} approved.")
+            await update.message.reply_text(f"✅ {target_handle} approved.")
             
-            # 🚨 UPGRADED: The Hybrid Onboarding Message 🚨
             welcome_msg = (
                 "🎉 **You are officially an Approved Helper!**\n\n"
                 "Your menu has updated. Use '🔔 Toggle Duty' to clock in and out.\n\n"
@@ -632,17 +629,21 @@ async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_menu(row['chat_id']),
                 parse_mode='Markdown'
             )
+        else:
+            await update.message.reply_text(f"❌ Could not find handle: {target_handle}")
         conn.close()
-    except IndexError: pass
+    except IndexError: 
+        await update.message.reply_text("⚠️ Format: /approve [Handle]")
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS: return
     try:
-        target_handle = context.args[0].upper()
+        target_handle = context.args[0]
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
+        cursor.execute('SELECT chat_id FROM users WHERE handle COLLATE NOCASE = ?', (target_handle,))
         row = cursor.fetchone()
+        
         if row:
             target_id = row['chat_id']
             cursor.execute("INSERT OR IGNORE INTO banned_users (chat_id) VALUES (?)", (target_id,))
@@ -652,9 +653,12 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cursor.execute('DELETE FROM active_sessions WHERE chat_id IN (?, ?)', (target_id, session['peer_id']))
                 await context.bot.send_message(chat_id=session['peer_id'], text="Session terminated by admin.")
             conn.commit()
-            await update.message.reply_text(f"{target_handle} banned.")
+            await update.message.reply_text(f"✅ {target_handle} banned.")
+        else:
+            await update.message.reply_text(f"❌ Could not find handle: {target_handle}")
         conn.close()
-    except IndexError: pass
+    except IndexError: 
+        await update.message.reply_text("⚠️ Format: /ban [Handle]")
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -701,11 +705,11 @@ async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_handle = args[0]
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT chat_id FROM users WHERE handle = ?', (target_handle,))
+    cursor.execute('SELECT chat_id FROM users WHERE handle COLLATE NOCASE = ?', (target_handle,))
     row = cursor.fetchone()
 
     if not row:
-        await update.message.reply_text(f"❌ Could not find a user with the handle {target_handle}.")
+        await update.message.reply_text(f"❌ Could not find a user with the handle: {target_handle}")
         conn.close()
         return
 
