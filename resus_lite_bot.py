@@ -623,7 +623,7 @@ async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "1️⃣ You are a peer, not a therapist. Just listen and validate.\n"
                 "2️⃣ Use 'Reply Anonymously' for quick support, and 'Support (1:1)' for deep conversations.\n"
                 "3️⃣ If a user is hostile, tap 🛑 End Session immediately.\n\n"
-                "📘 **Required Reading:** Before taking your first session, please read the full [Helper Playbook Here](https://telegra.ph/Resus-Lite-Helper-Playbook-01-01) to understand the safety protocols."
+                "📘 **Required Reading:** Before taking your first session, please read the full [Helper Playbook Here](https://telegra.ph/Resus-Lite-Helper-Playbook-03-26) to understand the safety protocols."
             )
             
             await context.bot.send_message(
