@@ -17,7 +17,7 @@ BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64"
 ADMIN_IDS = [6102322573] 
 FEED_CHAT_ID = "-1003645637131" 
 CHANNEL_LINK = "https://t.me/+8XX156VITLplNzQ0" # <--- YOUR CHANNEL LINK
-BOT_USERNAME = "ResusLite_Bot" # <--- REPLACE WITH YOUR BOT'S ACTUAL USERNAME (No @ symbol)
+BOT_USERNAME = "ResusLite_Bot" # <--- YOUR BOT'S ACTUAL USERNAME
 
 # --- Anti-Spam Configuration ---
 POST_COOLDOWN_SECONDS = 180  
@@ -614,10 +614,23 @@ async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
             conn.commit()
             
             await update.message.reply_text(f"{target_handle} approved.")
+            
+            # 🚨 UPGRADED: The Hybrid Onboarding Message 🚨
+            welcome_msg = (
+                "🎉 **You are officially an Approved Helper!**\n\n"
+                "Your menu has updated. Use '🔔 Toggle Duty' to clock in and out.\n\n"
+                "**Your 3 Golden Rules:**\n"
+                "1️⃣ You are a peer, not a therapist. Just listen and validate.\n"
+                "2️⃣ Use 'Reply Anonymously' for quick support, and 'Support (1:1)' for deep conversations.\n"
+                "3️⃣ If a user is hostile, tap 🛑 End Session immediately.\n\n"
+                "📘 **Required Reading:** Before taking your first session, please read the full [Helper Playbook Here](https://telegra.ph/Resus-Lite-Helper-Playbook-01-01) to understand the safety protocols."
+            )
+            
             await context.bot.send_message(
                 chat_id=row['chat_id'], 
-                text="🎉 You are now an approved helper!\n\nYour menu has updated. Use '🔔 Toggle Duty' to clock in and out.",
-                reply_markup=get_main_menu(row['chat_id'])
+                text=welcome_msg,
+                reply_markup=get_main_menu(row['chat_id']),
+                parse_mode='Markdown'
             )
         conn.close()
     except IndexError: pass
