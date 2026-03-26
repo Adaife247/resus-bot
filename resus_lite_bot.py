@@ -132,6 +132,19 @@ def check_moderation(text: str) -> bool:
     if re.search(link_pattern, text_lower): return True
     return False
 
+# 🛑 NEW: The Gatekeeper Logic
+async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if user_id in ADMIN_IDS:
+        return True
+    try:
+        member = await context.bot.get_chat_member(chat_id=FEED_CHAT_ID, user_id=user_id)
+        if member.status in ['left', 'kicked']:
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Subscription check failed: {e}")
+        return False
+
 async def notify_admins_of_crisis(chat_id: int, text: str, context: ContextTypes.DEFAULT_TYPE):
     handle = get_or_create_user(chat_id)
     alert_msg = (
@@ -199,6 +212,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if context.args:
         payload = context.args[0]
+
+        # 🛑 GATEKEEPER FOR INLINE BUTTONS
+        is_subbed = await check_subscription(chat_id, context)
+        if not is_subbed:
+            await update.message.reply_text(
+                f"🛑 **Access Denied.**\n\nYou must join the public community before interacting with posts.\n\n👉 [Click Here to Join]({CHANNEL_LINK})", 
+                parse_mode='Markdown'
+            )
+            conn.close()
+            return
         
         if payload.startswith("reply_"):
             post_id = int(payload.split("_")[1])
@@ -410,6 +433,16 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor = conn.cursor()
     
     if text == "📝 New Post":
+        # 🛑 GATEKEEPER FOR NEW POSTS
+        is_subbed = await check_subscription(chat_id, context)
+        if not is_subbed:
+            await update.message.reply_text(
+                f"🛑 **Access Denied.**\n\nYou must join the public community to understand how Resus Lite works before posting.\n\n👉 [Click Here to Join]({CHANNEL_LINK})", 
+                parse_mode='Markdown'
+            )
+            conn.close()
+            return
+
         user_ui_states[chat_id] = "posting"
         await update.message.reply_text("✍️ What's on your mind? Type your message below to broadcast it anonymously.\n*(Or type 'cancel' to abort)*")
         conn.close()
