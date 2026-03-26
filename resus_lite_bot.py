@@ -308,7 +308,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-                async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🛡️ *Your Privacy & Safety on Resus Lite*\n\n"
         "**1. Total Anonymity:** Your real Telegram name and phone number are hidden. Other students only ever see your Friendly Handle (like `Calm-River-02`).\n"
