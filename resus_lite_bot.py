@@ -518,61 +518,61 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_state = user_ui_states.get(chat_id)
 
     if current_state == "posting":
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('INSERT INTO posts (author_chat_id, content) VALUES (?, ?)', (chat_id, text))
-            post_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO posts (author_chat_id, content) VALUES (?, ?)', (chat_id, text))
+        post_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
 
-            user_ui_states.pop(chat_id, None)
+        user_ui_states.pop(chat_id, None)
 
+        handle = get_or_create_user(chat_id)
+        safe_text = escape_markdown_v2(text)
+
+        # 🚨 THE FIX: We must escape the hyphens in the Handle too! 🚨
+        safe_handle = escape_markdown_v2(handle)
+        feed_message = f"👤 *{safe_handle}*\n\n{safe_text}"
+
+        await context.bot.send_message(
+            chat_id=FEED_CHAT_ID,
+            text=feed_message,
+            parse_mode='MarkdownV2',
+            reply_markup=build_post_keyboard(post_id)
+        )
+        # Success Message with Channel Link
+        await update.message.reply_text(
+            f"✅ Your post has been published anonymously to the [Public Feed]({CHANNEL_LINK}).",
+            parse_mode='Markdown'
+        )
+
+    elif current_state.startswith("replying_"):
+        post_id = int(current_state.split("_")[1])
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
+        row = cursor.fetchone()
+        conn.close()
+
+        user_ui_states.pop(chat_id, None)
+
+        if row:
+            op_chat_id = row['author_chat_id']
             handle = get_or_create_user(chat_id)
             safe_text = escape_markdown_v2(text)
-            
-            # 🚨 THE FIX: We must escape the hyphens in the Handle too! 🚨
+
+            # 🚨 THE FIX: Applied to replies as well 🚨
             safe_handle = escape_markdown_v2(handle)
-            feed_message = f"👤 *{safe_handle}*\n\n{safe_text}"
-            
+
             await context.bot.send_message(
-                chat_id=FEED_CHAT_ID,
-                text=feed_message,
-                parse_mode='MarkdownV2',
-                reply_markup=build_post_keyboard(post_id)
+                chat_id=op_chat_id,
+                text=f"💬 *New Reply on your post from {safe_handle}:*\n\n_{safe_text}_",
+                parse_mode='MarkdownV2'
             )
-            # Success Message with Channel Link
-            await update.message.reply_text(
-                f"✅ Your post has been published anonymously to the [Public Feed]({CHANNEL_LINK}).",
-                parse_mode='Markdown'
-            )
-
-        elif current_state.startswith("replying_"):
-            post_id = int(current_state.split("_")[1])
-            
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
-            row = cursor.fetchone()
-            conn.close()
-            
-            user_ui_states.pop(chat_id, None)
-
-            if row:
-                op_chat_id = row['author_chat_id']
-                handle = get_or_create_user(chat_id)
-                safe_text = escape_markdown_v2(text)
-                
-                # 🚨 THE FIX: Applied to replies as well 🚨
-                safe_handle = escape_markdown_v2(handle)
-                
-                await context.bot.send_message(
-                    chat_id=op_chat_id,
-                    text=f"💬 *New Reply on your post from {safe_handle}:*\n\n_{safe_text}_",
-                    parse_mode='MarkdownV2'
-                )
-                await update.message.reply_text("✅ Your reply was sent securely to the author.")
-            else:
-                await update.message.reply_text("❌ Could not find the original post.")
+            await update.message.reply_text("✅ Your reply was sent securely to the author.")
+        else:
+            await update.message.reply_text("❌ Could not find the original post.")
 # --- Admin Commands ---
 async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS: return
