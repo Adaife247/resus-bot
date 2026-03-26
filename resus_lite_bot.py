@@ -205,7 +205,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT handle FROM users WHERE chat_id = ?', (chat_id,))
-  is_new_user = cursor.fetchone() is None
+    is_new_user = cursor.fetchone() is None
     
     # 🛑 THE VIP BOUNCER (Locks the bot for new users without the link)
     if is_new_user:
