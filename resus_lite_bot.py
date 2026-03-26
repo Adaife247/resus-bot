@@ -439,7 +439,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
         
-    elif text == "🤝 Apply as Helper":
+elif text == "🤝 Apply as Helper":
         cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
         row = cursor.fetchone()
         
