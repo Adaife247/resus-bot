@@ -16,7 +16,8 @@ from telegram.ext import (
 BOT_TOKEN = "8714395067:AAHs5xclFvkSc5wf_a47Q-6m-O7I2SvWq64" 
 ADMIN_IDS = [6102322573] 
 FEED_CHAT_ID = "-1003645637131" 
-CHANNEL_LINK = "https://t.me/+8XX156VITLplNzQ0" # <--- REPLACE THIS WITH YOUR REAL LINK
+CHANNEL_LINK = "https://t.me/+8XX156VITLplNzQ0" # <--- YOUR CHANNEL LINK
+BOT_USERNAME = "ResusLite_Bot" # <--- REPLACE WITH YOUR BOT'S ACTUAL USERNAME (No @ symbol)
 
 # --- Anti-Spam Configuration ---
 POST_COOLDOWN_SECONDS = 180  
@@ -148,14 +149,15 @@ def get_heart_count(post_id: int) -> int:
     conn.close()
     return count
 
+# 🚨 UPGRADED: Deep Linking Teleporter Buttons 🚨
 def build_post_keyboard(post_id: int) -> InlineKeyboardMarkup:
     heart_count = get_heart_count(post_id)
     keyboard = [
         [
             InlineKeyboardButton(f"❤️ {heart_count}", callback_data=f"heart_{post_id}"),
-            InlineKeyboardButton("🫂 Support (1:1)", callback_data=f"support_{post_id}")
+            InlineKeyboardButton("🫂 Support (1:1)", url=f"https://t.me/{BOT_USERNAME}?start=support_{post_id}")
         ],
-        [InlineKeyboardButton("💬 Reply Anonymously", callback_data=f"reply_{post_id}")]
+        [InlineKeyboardButton("💬 Reply Anonymously", url=f"https://t.me/{BOT_USERNAME}?start=reply_{post_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -179,7 +181,7 @@ def get_main_menu(chat_id: int):
     keyboard.append([KeyboardButton("👤 My Handle")])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# 🚨 UPGRADED: Start Command with Link to the Feed 🚨
+# 🚨 UPGRADED: Context-Aware Start Command with Deep Linking 🚨
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if is_banned(chat_id): return
@@ -188,11 +190,72 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor = conn.cursor()
     cursor.execute('SELECT handle FROM users WHERE chat_id = ?', (chat_id,))
     is_new_user = cursor.fetchone() is None
-    conn.close()
-
+    
     handle = get_or_create_user(chat_id)
     user_ui_states.pop(chat_id, None) 
     
+    # --- DEEP LINK ROUTING (The Teleporter) ---
+    if context.args:
+        payload = context.args[0]
+        
+        # If they clicked Reply...
+        if payload.startswith("reply_"):
+            post_id = int(payload.split("_")[1])
+            user_ui_states[chat_id] = f"replying_{post_id}"
+            await update.message.reply_text(
+                "💬 Type your reply below. It will be sent anonymously to the author.\n*(Or type 'cancel' to abort)*",
+                reply_markup=get_main_menu(chat_id)
+            )
+            conn.close()
+            return
+            
+        # If they clicked Support...
+        elif payload.startswith("support_"):
+            cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (chat_id,))
+            helper = cursor.fetchone()
+            
+            if not helper or helper['status'] != 'approved':
+                await update.message.reply_text("⚠️ Only approved helpers can start 1:1 sessions. Tap '🤝 Apply as Helper' first on your menu.")
+                conn.close()
+                return
+
+            post_id = int(payload.split("_")[1])
+            cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                await update.message.reply_text("❌ Could not find the original post.")
+                conn.close()
+                return
+                
+            op_chat_id = row['author_chat_id']
+            
+            if op_chat_id == chat_id:
+                await update.message.reply_text("You cannot support your own post.")
+                conn.close()
+                return
+                
+            cursor.execute('SELECT chat_id FROM active_sessions WHERE chat_id IN (?, ?)', (chat_id, op_chat_id))
+            if cursor.fetchone():
+                await update.message.reply_text("One of you is already in an active session.")
+                conn.close()
+                return
+
+            cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (chat_id, op_chat_id))
+            cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (op_chat_id, chat_id))
+            conn.commit()
+            conn.close()
+            
+            user_ui_states.pop(chat_id, None)
+            user_ui_states.pop(op_chat_id, None)
+            
+            await update.message.reply_text("🟢 1:1 Session started! You are now connected to the author. Tap 🛑 End Session when done.", reply_markup=get_main_menu(chat_id))
+            await context.bot.send_message(chat_id=op_chat_id, text="🟢 A vetted helper has connected with you regarding your recent post. Tap 🛑 End Session when done.", reply_markup=get_main_menu(op_chat_id))
+            return
+
+    conn.close()
+
+    # --- NORMAL START GREETING ---
     if is_new_user:
         await update.message.reply_text(
             f"Welcome to Resus Lite! 🌿\n\n"
@@ -212,7 +275,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
 
-# 🚨 NEW: The Privacy Guide Command 🚨
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🛡️ *Your Privacy & Safety on Resus Lite*\n\n"
@@ -223,7 +285,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# 🚨 NEW: User Data Deletion Command 🚨
 async def deletemydata_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     
@@ -275,60 +336,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         conn.close()
         await query.edit_message_reply_markup(reply_markup=build_post_keyboard(post_id))
-
-    elif data.startswith("reply_"):
-        await query.answer()
-        post_id = int(data.split("_")[1])
-        user_ui_states[user_id] = f"replying_{post_id}"
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="💬 Type your reply below. It will be sent anonymously to the author.\n*(Or type 'cancel' to abort)*"
-        )
-
-    elif data.startswith("support_"):
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT status FROM helpers WHERE chat_id = ?', (user_id,))
-        helper = cursor.fetchone()
-        
-        if not helper or helper['status'] != 'approved':
-            await query.answer("Access Denied", show_alert=True)
-            await context.bot.send_message(chat_id=user_id, text="⚠️ Only approved helpers can start 1:1 sessions. Tap '🤝 Apply as Helper' first.")
-            conn.close()
-            return
-
-        await query.answer()
-        post_id = int(data.split("_")[1])
-        cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
-        row = cursor.fetchone()
-        
-        if not row:
-            conn.close()
-            return
-            
-        op_chat_id = row['author_chat_id']
-        
-        if op_chat_id == user_id:
-            await context.bot.send_message(chat_id=user_id, text="You cannot support your own post.")
-            conn.close()
-            return
-            
-        cursor.execute('SELECT chat_id FROM active_sessions WHERE chat_id IN (?, ?)', (user_id, op_chat_id))
-        if cursor.fetchone():
-            await context.bot.send_message(chat_id=user_id, text="One of you is already in an active session.")
-            conn.close()
-            return
-
-        cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (user_id, op_chat_id))
-        cursor.execute('INSERT INTO active_sessions (chat_id, peer_id) VALUES (?, ?)', (op_chat_id, user_id))
-        conn.commit()
-        conn.close()
-        
-        user_ui_states.pop(user_id, None)
-        user_ui_states.pop(op_chat_id, None)
-        
-        await context.bot.send_message(chat_id=user_id, text="🟢 1:1 Session started! You are now connected to the author. Tap 🛑 End Session when done.")
-        await context.bot.send_message(chat_id=op_chat_id, text="🟢 A vetted helper has connected with you regarding your recent post. Tap 🛑 End Session when done.")
 
     elif data == "relief_breathe":
         await query.answer()
@@ -517,62 +524,81 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- THE MASTER GATEKEEPER ---
     current_state = user_ui_states.get(chat_id)
 
-    if current_state == "posting":
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO posts (author_chat_id, content) VALUES (?, ?)', (chat_id, text))
-        post_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
+    if current_state == "posting" or (current_state and current_state.startswith("replying_")):
+        
+        current_time = std_time.time()
+        history = user_post_history.get(chat_id, [])
+        history = [ts for ts in history if current_time - ts < POST_COOLDOWN_SECONDS]
+        
+        if len(history) >= MAX_BURST_MESSAGES:
+            await update.message.reply_text(
+                "⏳ **Cooldown Active:** To keep the platform safe from spam, please wait a few minutes before sending more messages.", 
+                parse_mode='Markdown'
+            )
+            return
 
-        user_ui_states.pop(chat_id, None)
+        if check_moderation(text):
+            await update.message.reply_text(CRISIS_MESSAGE, parse_mode='Markdown')
+            await notify_admins_of_crisis(chat_id, text, context)
+            return
+            
+        history.append(current_time)
+        user_post_history[chat_id] = history
+        
+        if current_state == "posting":
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO posts (author_chat_id, content) VALUES (?, ?)', (chat_id, text))
+            post_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
 
-        handle = get_or_create_user(chat_id)
-        safe_text = escape_markdown_v2(text)
+            user_ui_states.pop(chat_id, None)
 
-        # 🚨 THE FIX: We must escape the hyphens in the Handle too! 🚨
-        safe_handle = escape_markdown_v2(handle)
-        feed_message = f"👤 *{safe_handle}*\n\n{safe_text}"
-
-        await context.bot.send_message(
-            chat_id=FEED_CHAT_ID,
-            text=feed_message,
-            parse_mode='MarkdownV2',
-            reply_markup=build_post_keyboard(post_id)
-        )
-        # Success Message with Channel Link
-        await update.message.reply_text(
-            f"✅ Your post has been published anonymously to the [Public Feed]({CHANNEL_LINK}).",
-            parse_mode='Markdown'
-        )
-
-    elif current_state.startswith("replying_"):
-        post_id = int(current_state.split("_")[1])
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
-        row = cursor.fetchone()
-        conn.close()
-
-        user_ui_states.pop(chat_id, None)
-
-        if row:
-            op_chat_id = row['author_chat_id']
             handle = get_or_create_user(chat_id)
             safe_text = escape_markdown_v2(text)
 
-            # 🚨 THE FIX: Applied to replies as well 🚨
             safe_handle = escape_markdown_v2(handle)
+            feed_message = f"👤 *{safe_handle}*\n\n{safe_text}"
 
             await context.bot.send_message(
-                chat_id=op_chat_id,
-                text=f"💬 *New Reply on your post from {safe_handle}:*\n\n_{safe_text}_",
-                parse_mode='MarkdownV2'
+                chat_id=FEED_CHAT_ID,
+                text=feed_message,
+                parse_mode='MarkdownV2',
+                reply_markup=build_post_keyboard(post_id)
             )
-            await update.message.reply_text("✅ Your reply was sent securely to the author.")
-        else:
-            await update.message.reply_text("❌ Could not find the original post.")
+            await update.message.reply_text(
+                f"✅ Your post has been published anonymously to the [Public Feed]({CHANNEL_LINK}).",
+                parse_mode='Markdown'
+            )
+
+        elif current_state.startswith("replying_"):
+            post_id = int(current_state.split("_")[1])
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
+            row = cursor.fetchone()
+            conn.close()
+
+            user_ui_states.pop(chat_id, None)
+
+            if row:
+                op_chat_id = row['author_chat_id']
+                handle = get_or_create_user(chat_id)
+                safe_text = escape_markdown_v2(text)
+
+                safe_handle = escape_markdown_v2(handle)
+
+                await context.bot.send_message(
+                    chat_id=op_chat_id,
+                    text=f"💬 *New Reply on your post from {safe_handle}:*\n\n_{safe_text}_",
+                    parse_mode='MarkdownV2'
+                )
+                await update.message.reply_text("✅ Your reply was sent securely to the author.")
+            else:
+                await update.message.reply_text("❌ Could not find the original post.")
+
 # --- Admin Commands ---
 async def approve_helper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id not in ADMIN_IDS: return
@@ -699,7 +725,6 @@ async def reachout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
-# 🚨 NEW: The Broadcast Command (Admin Only) 🚨
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_chat.id
     if admin_id not in ADMIN_IDS: return
@@ -726,9 +751,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
             success_count += 1
-            await asyncio.sleep(0.05) # Prevents hitting Telegram rate limits
+            await asyncio.sleep(0.05) 
         except Exception:
-            pass # User might have blocked the bot
+            pass 
             
     await update.message.reply_text(f"✅ Broadcast complete. Successfully delivered to {success_count} users.")
 
@@ -743,7 +768,7 @@ async def resetme_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     await update.message.reply_text("✅ Your old account has been securely wiped. Tap /start to generate your new Friendly Anonymous handle.")
-# 🚨 NEW: Master Feed Wipe (Admin Only) 🚨
+
 async def wipefeed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_chat.id
     if user_id not in ADMIN_IDS: return
@@ -751,20 +776,19 @@ async def wipefeed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Delete all posts and reactions
     cursor.execute('DELETE FROM posts')
     cursor.execute('DELETE FROM reactions')
     
-    # Reset the autoincrement counter back to 0
     try:
         cursor.execute("DELETE FROM sqlite_sequence WHERE name='posts'")
     except Exception:
-        pass # Fails silently if the table is already completely empty
+        pass 
         
     conn.commit()
     conn.close()
     
     await update.message.reply_text("🧼 **Clean Slate!** All posts and reactions have been permanently wiped from the database.", parse_mode='Markdown')
+
 # --- Main Application ---
 def main():
     init_db()
@@ -777,8 +801,6 @@ def main():
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(CommandHandler("resetme", resetme_command))
     app.add_handler(CommandHandler("wipefeed", wipefeed_command))
-    
-    # Registering the new final layer commands
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(CommandHandler("deletemydata", deletemydata_command))
