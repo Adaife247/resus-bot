@@ -314,8 +314,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🛡️ *Your Privacy & Safety on Resus Lite*\n\n"
-        "**1. Total Anonymity:** Your real Telegram name and phone number are hidden. Other students only ever see your Friendly Handle (like `Calm-River-02`).\n"
-        "**2. 1:1 Sessions:** If you tap 'Support' on a post, you enter a private, 2-way anonymous chat. Tap '🛑 End Session' to disconnect instantly.\n"
+        "**1. Total Anonymity:** Your real Telegram name and phone number are strictly hidden. Other students only see your Friendly Handle.\n\n"
+        "**2. The Interaction Buttons:**\n"
+        "💬 *Reply Anonymously:* Sends a single, one-way message to the author. Great for quick tips.\n"
+        "🫂 *Support (1:1):* Opens a secure, continuous 2-way chat room. Great for deep conversations. Tap '🛑 End Session' to disconnect instantly.\n\n"
         "**3. Your Data:** You are in control. If you ever want to erase your account, posts, and history, just type `/deletemydata`.\n\n"
         "Remember, you don't have to carry it all alone. 🌿"
     )
