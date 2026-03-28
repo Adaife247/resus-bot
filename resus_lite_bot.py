@@ -644,14 +644,14 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_state = user_ui_states.get(chat_id)
 
     if current_state == "posting" or (current_state and current_state.startswith("replying_")):
-        
+
         current_time = std_time.time()
         history = user_post_history.get(chat_id, [])
         history = [ts for ts in history if current_time - ts < POST_COOLDOWN_SECONDS]
-        
+
         if len(history) >= MAX_BURST_MESSAGES:
             await update.message.reply_text(
-                "⏳ **Cooldown Active:** To keep the platform safe from spam, please wait a few minutes before sending more messages.", 
+                "⏳ **Cooldown Active:** To keep the platform safe from spam, please wait a few minutes before sending more messages.",
                 parse_mode='Markdown'
             )
             return
@@ -660,10 +660,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(CRISIS_MESSAGE, parse_mode='Markdown')
             await notify_admins_of_crisis(chat_id, text, context)
             return
-            
+
         history.append(current_time)
         user_post_history[chat_id] = history
-        
+
         if current_state == "posting":
             conn = get_db_connection()
             cursor = conn.cursor()
