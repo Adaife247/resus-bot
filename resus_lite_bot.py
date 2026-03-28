@@ -60,6 +60,13 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS active_sessions (chat_id INTEGER PRIMARY KEY, peer_id INTEGER)''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS helpers (chat_id INTEGER PRIMARY KEY, status TEXT DEFAULT 'pending')''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS banned_users (chat_id INTEGER PRIMARY KEY)''')
+    
+    # 🌻 THE KUDOS UPGRADE (Safely adds the column if it doesn't exist yet)
+    try:
+        cursor.execute("ALTER TABLE helpers ADD COLUMN kudos INTEGER DEFAULT 0")
+    except Exception:
+        pass 
+
     conn.commit()
     conn.close()
 
@@ -121,7 +128,7 @@ def check_moderation(text: str) -> bool:
     somatic_pattern = r"(can\'?t\s*breathe|heart\s*is\s*(exploding|racing)|chest\s*is\s*crushing|completely\s*numb|make\s*it\s*stop|losing\s*my\s*mind)"
     apathy_pattern = r"(giving\s*up|done\s*trying|nothing\s*matters\s*anymore|too\s*exhausted\s*to\s*(live|try))"
     
-    # 🚨 Anti-Spam & Anti-Begging Patterns
+    # Anti-Spam Patterns
     scam_pattern = r"(\b\d{10}\b|urgent\s*2k|send\s*money|send\s*funds|account\s*number)"
     link_pattern = r"(http[s]?://|www\.|t\.me/|\.com|\.ng)"
 
@@ -132,7 +139,6 @@ def check_moderation(text: str) -> bool:
     if re.search(link_pattern, text_lower): return True
     return False
 
-# 🛑 NEW: The Gatekeeper Logic
 async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if user_id in ADMIN_IDS:
         return True
@@ -207,9 +213,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute('SELECT handle FROM users WHERE chat_id = ?', (chat_id,))
     is_new_user = cursor.fetchone() is None
     
-    # 🛑 THE VIP BOUNCER (Locks the bot for new users without the link)
+    # 🛑 THE VIP BOUNCER
     if is_new_user:
-        # Check if they have the secret 'medbeta' password in the link
         if not context.args or context.args[0] != "medbeta":
             await update.message.reply_text(
                 "🔒 **Private Beta**\n\nResus Lite is currently in a closed beta exclusively for Medical Students. You need a VIP invite link to enter.",
@@ -224,7 +229,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         payload = context.args[0]
 
-        # 🛑 GATEKEEPER FOR INLINE BUTTONS
         is_subbed = await check_subscription(chat_id, context)
         if not is_subbed:
             await update.message.reply_text(
@@ -263,7 +267,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
                 
             op_chat_id = row['author_chat_id']
-            
             if op_chat_id == chat_id:
                 await update.message.reply_text("You cannot support your own post.")
                 conn.close()
@@ -320,7 +323,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def deletemydata_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -434,6 +436,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "✅ Grounding complete. You have successfully anchored your brain back to the present moment.\n\nTake one final deep breath. You are safe."
             )
 
+    # 🌻 CATCHING THE SUNFLOWER
+    elif data.startswith("kudo_"):
+        await query.answer()
+        target_id = int(data.split("_")[1])
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Add 1 to their score (only if they are in the helpers table)
+        cursor.execute("UPDATE helpers SET kudos = kudos + 1 WHERE chat_id = ?", (target_id,))
+        if cursor.rowcount > 0: 
+            conn.commit()
+            try:
+                # Deliver the flower to the helper
+                await context.bot.send_message(
+                    chat_id=target_id, 
+                    text="🌻 **Someone you supported just sent you a Sunflower!**\n\nThank you for being a light in the Void.",
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                pass
+                
+        conn.close()
+        
+        # Change the button so they can't spam it
+        await query.edit_message_text("🌻 Sunflower sent anonymously! Thank you.")
+
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = update.message.text
@@ -444,7 +473,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor = conn.cursor()
     
     if text == "📝 New Post":
-        # 🛑 GATEKEEPER FOR NEW POSTS
         is_subbed = await check_subscription(chat_id, context)
         if not is_subbed:
             await update.message.reply_text(
@@ -466,8 +494,25 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             peer_id = session['peer_id']
             cursor.execute('DELETE FROM active_sessions WHERE chat_id IN (?, ?)', (chat_id, peer_id))
             conn.commit()
-            await update.message.reply_text("Session ended.", reply_markup=get_main_menu(chat_id))
-            await context.bot.send_message(chat_id=peer_id, text="The other user has ended the session.", reply_markup=get_main_menu(peer_id))
+            
+            # 🌻 CREATE THE KUDOS BUTTONS
+            keyboard_for_user = [[InlineKeyboardButton("🌻 Send a Sunflower", callback_data=f"kudo_{peer_id}")]]
+            keyboard_for_peer = [[InlineKeyboardButton("🌻 Send a Sunflower", callback_data=f"kudo_{chat_id}")]]
+
+            # Message to the person who clicked End Session
+            await update.message.reply_text(
+                "Session ended. If your chat partner helped you feel a little lighter today, send them an anonymous thank you.", 
+                reply_markup=InlineKeyboardMarkup(keyboard_for_user)
+            )
+            await update.message.reply_text("Use the menu below to navigate.", reply_markup=get_main_menu(chat_id))
+
+            # Message to the other person
+            await context.bot.send_message(
+                chat_id=peer_id, 
+                text="The other user has ended the session. If they helped you feel a little lighter today, send them an anonymous thank you.", 
+                reply_markup=InlineKeyboardMarkup(keyboard_for_peer)
+            )
+            await context.bot.send_message(chat_id=peer_id, text="Use the menu below to navigate.", reply_markup=get_main_menu(peer_id))
         else:
             await update.message.reply_text("You are not in an active session.")
         conn.close()
@@ -850,6 +895,35 @@ async def wipefeed_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("🧼 **Clean Slate!** All posts and reactions have been permanently wiped from the database.", parse_mode='Markdown')
 
+# 🌻 THE NEW ADMIN LEADERBOARD COMMAND
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id not in ADMIN_IDS: return
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Grab the top 10 helpers with the most sunflowers
+    cursor.execute('''
+        SELECT u.handle, h.kudos 
+        FROM helpers h 
+        JOIN users u ON h.chat_id = u.chat_id 
+        WHERE h.status = 'approved' AND h.kudos > 0
+        ORDER BY h.kudos DESC 
+        LIMIT 10
+    ''')
+    leaders = cursor.fetchall()
+    conn.close()
+    
+    if not leaders:
+        await update.message.reply_text("📊 **Kudos Leaderboard**\n\nNo sunflowers have been given yet!")
+        return
+        
+    board = "📊 **Top Campus Helpers (Kudos Leaderboard)** 🌻\n\n"
+    for i, row in enumerate(leaders, 1):
+        board += f"{i}. `{row['handle']}` - {row['kudos']} 🌻\n"
+        
+    await update.message.reply_text(board, parse_mode='Markdown')
+
 # --- Main Application ---
 def main():
     init_db()
@@ -865,6 +939,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(CommandHandler("deletemydata", deletemydata_command))
+    app.add_handler(CommandHandler("leaderboard", leaderboard_command)) # <-- Added Leaderboard
     
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
