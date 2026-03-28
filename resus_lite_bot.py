@@ -61,7 +61,7 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS helpers (chat_id INTEGER PRIMARY KEY, status TEXT DEFAULT 'pending')''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS banned_users (chat_id INTEGER PRIMARY KEY)''')
     
-    # 🌻 THE KUDOS UPGRADE (Safely adds the column if it doesn't exist yet)
+    # 🌻 THE KUDOS UPGRADE
     try:
         cursor.execute("ALTER TABLE helpers ADD COLUMN kudos INTEGER DEFAULT 0")
     except Exception:
@@ -137,6 +137,14 @@ def check_moderation(text: str) -> bool:
     if re.search(apathy_pattern, text_lower): return True
     if re.search(scam_pattern, text_lower): return True
     if re.search(link_pattern, text_lower): return True
+    return False
+
+# 🛑 THE IRON DOME TOXICITY FILTER
+def check_toxicity(text: str) -> bool:
+    text_lower = text.lower()
+    toxic_pattern = r"\b(mumu|ode|stupid|fool|idiot|crazy|mad|useless|bitch|fuck|shit|dumb|bastard|ashawo)\b"
+    if re.search(toxic_pattern, text_lower): 
+        return True
     return False
 
 async def check_subscription(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -391,7 +399,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(4)
                 
             await msg.edit_text("✅ Breathing cycle complete. You did great.\n\nTap 🧘‍♀️ Quick Relief on your menu if you need to go again.")
-        except Exception as e:
+        except Exception e:
             await context.bot.send_message(chat_id=user_id, text=f"❌ Oops, the visualizer hit a snag: {e}")
 
     elif data == "relief_ground_start":
@@ -446,12 +454,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Add 1 to their score (only if they are in the helpers table)
         cursor.execute("UPDATE helpers SET kudos = kudos + 1 WHERE chat_id = ?", (target_id,))
         if cursor.rowcount > 0: 
             conn.commit()
             try:
-                # Deliver the flower to the helper
                 await context.bot.send_message(
                     chat_id=target_id, 
                     text="🌻 **Someone you supported just sent you a Sunflower!**\n\nThank you for being a light in the Void.",
@@ -461,9 +467,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
                 
         conn.close()
-        
-        # Change the button so they can't spam it
         await query.edit_message_text("🌻 Sunflower sent anonymously! Thank you.")
+
+    # 🚩 CATCHING ABUSE REPORTS
+    elif data.startswith("report_"):
+        await query.answer()
+        offender_id = int(data.split("_")[1])
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT handle FROM users WHERE chat_id = ?', (offender_id,))
+        row = cursor.fetchone()
+        offender_handle = row['handle'] if row else "Unknown"
+        conn.close()
+
+        reported_text = query.message.text if query.message else "Unknown text"
+        
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"🚨 **ABUSE REPORT** 🚨\n\n**Offender:** `{offender_handle}`\n\n**Message sent:**\n{reported_text}\n\n👉 **To ban instantly:**\n`/ban {offender_handle}`\n👉 **To warn them:**\n`/warn {offender_handle} Please be respectful.`",
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                pass
+        
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ Reported to Admins", callback_data="already_reported")]]))
+
+    elif data == "already_reported":
+        await query.answer("The admins are already handling this.", show_alert=True)
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -501,14 +534,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard_for_user = [[InlineKeyboardButton("🌻 Send a Sunflower", callback_data=f"kudo_{peer_id}")]]
             keyboard_for_peer = [[InlineKeyboardButton("🌻 Send a Sunflower", callback_data=f"kudo_{chat_id}")]]
 
-            # Message to the person who clicked End Session
             await update.message.reply_text(
                 "Session ended. If your chat partner helped you feel a little lighter today, send them an anonymous thank you.", 
                 reply_markup=InlineKeyboardMarkup(keyboard_for_user)
             )
             await update.message.reply_text("Use the menu below to navigate.", reply_markup=get_main_menu(chat_id))
 
-            # Message to the other person
             await context.bot.send_message(
                 chat_id=peer_id, 
                 text="The other user has ended the session. If they helped you feel a little lighter today, send them an anonymous thank you.", 
@@ -663,6 +694,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_state.startswith("replying_"):
             post_id = int(current_state.split("_")[1])
 
+            # 🛑 THE TOXICITY CHECK
+            if check_toxicity(text):
+                await update.message.reply_text("🛑 **Message Blocked:** Your reply contains language that violates our safe space policy. Please keep it supportive.", parse_mode='Markdown')
+                user_ui_states.pop(chat_id, None)
+                return
+
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute('SELECT author_chat_id FROM posts WHERE post_id = ?', (post_id,))
@@ -675,13 +712,16 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 op_chat_id = row['author_chat_id']
                 handle = get_or_create_user(chat_id)
                 safe_text = escape_markdown_v2(text)
-
                 safe_handle = escape_markdown_v2(handle)
+
+                # 🚩 THE REPORT BUTTON
+                report_keyboard = [[InlineKeyboardButton("🚩 Report Abuse", callback_data=f"report_{chat_id}")]]
 
                 await context.bot.send_message(
                     chat_id=op_chat_id,
                     text=f"💬 *New Reply on your post from {safe_handle}:*\n\n_{safe_text}_",
-                    parse_mode='MarkdownV2'
+                    parse_mode='MarkdownV2',
+                    reply_markup=InlineKeyboardMarkup(report_keyboard)
                 )
                 await update.message.reply_text("✅ Your reply was sent securely to the author.")
             else:
@@ -750,6 +790,38 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     except IndexError: 
         await update.message.reply_text("⚠️ Format: /ban [Handle]")
+
+# ⚠️ THE YELLOW CARD WARNING COMMAND
+async def warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id not in ADMIN_IDS: return
+    try:
+        target_handle = context.args[0]
+        warning_message = " ".join(context.args[1:]) 
+        
+        if not warning_message:
+            await update.message.reply_text("⚠️ Please include a reason for the warning.")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT chat_id FROM users WHERE handle COLLATE NOCASE = ?', (target_handle,))
+        row = cursor.fetchone()
+        
+        if row:
+            target_id = row['chat_id']
+            warning_text = (
+                f"⚠️ **OFFICIAL WARNING FROM ADMINS** ⚠️\n\n"
+                f"Your recent interaction was reported for violating our safe space guidelines.\n\n"
+                f"**Admin Note:** _{warning_message}_\n\n"
+                f"Resus Lite relies on empathy. Further reports will result in a permanent ban."
+            )
+            await context.bot.send_message(chat_id=target_id, text=warning_text, parse_mode='Markdown')
+            await update.message.reply_text(f"✅ Warning successfully delivered to {target_handle}.")
+        else:
+            await update.message.reply_text(f"❌ Could not find handle: {target_handle}")
+        conn.close()
+    except IndexError: 
+        await update.message.reply_text("⚠️ Format: /warn [Handle] [Your warning message]")
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -934,6 +1006,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("approve", approve_helper))
     app.add_handler(CommandHandler("ban", ban_user))
+    app.add_handler(CommandHandler("warn", warn_user)) # <-- Added Warn Command
     app.add_handler(CommandHandler("reachout", reachout_command))
     app.add_handler(CommandHandler("stats", admin_stats))
     app.add_handler(CommandHandler("resetme", resetme_command))
@@ -941,7 +1014,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(CommandHandler("deletemydata", deletemydata_command))
-    app.add_handler(CommandHandler("leaderboard", leaderboard_command)) # <-- Added Leaderboard
+    app.add_handler(CommandHandler("leaderboard", leaderboard_command)) 
     
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
