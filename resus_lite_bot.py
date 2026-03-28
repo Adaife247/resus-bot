@@ -399,7 +399,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(4)
                 
             await msg.edit_text("✅ Breathing cycle complete. You did great.\n\nTap 🧘‍♀️ Quick Relief on your menu if you need to go again.")
-        except Exception e:
+        except Exception as e:
             await context.bot.send_message(chat_id=user_id, text=f"❌ Oops, the visualizer hit a snag: {e}")
 
     elif data == "relief_ground_start":
